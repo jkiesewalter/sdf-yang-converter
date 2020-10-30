@@ -13,15 +13,72 @@ using json = nlohmann::json;
 
 map<string, sdfCommon*> typedefs;
 map<string, sdfCommon*> identities;
+map<string, sdfCommon*> leafs;
 
+/*
+ * Cast a char array to string with NULL being
+ * translated to the empty string
+ */
 string avoidNull(const char *c)
 {
 	if (c == NULL)
 		return "";
-	else
-		return string(c);
+	return string(c);
 }
 
+/*
+ * Recursively generate the path of a node
+ */
+string generatePath(lys_node *node)
+{
+	if (node->parent == NULL)
+		return "/" + avoidNull(node->name);
+	return  generatePath(node->parent) + "/" + avoidNull(node->name);
+}
+
+/*
+ * For a given leaf node that has the type leafref expand the path
+ * given by the leafref so that it does not contain ".." anymore
+ * but specifies the full path
+ */
+string expandPath(lys_node_leaf *node)
+{
+	if (node->type.base != LY_TYPE_LEAFREF)
+	{
+		cerr << "expandPath(): node " + avoidNull(node->name)
+				+ "  has wrong base type" << endl;
+		return "";
+	}
+	string path = avoidNull(node->type.info.lref.path);
+	//cout << "???" << path << endl;
+	lys_node *parent = (lys_node*)node;
+	smatch sm;
+	regex all_regex("(\\.\\./)+(.*)");
+	regex up_regex("\\.\\./");
+	if (regex_match(path, sm, all_regex))
+	{
+	    auto begin_up = sregex_iterator(path.begin(), path.end(), up_regex);
+	    auto end_up = sregex_iterator();
+	    int match_up = distance(begin_up, end_up);
+		for (int i = 0; i < match_up; i++)
+			parent = parent->parent;
+		path = generatePath(parent) + "/" + string(sm[sm.size()-1]);
+		//cout << "!!!" << path << endl;
+	}
+	return path;
+}
+/*
+ * Overloaded function
+ */
+string expandPath(lys_node_leaflist *node)
+{
+	return expandPath((lys_node_leaf*) node);
+}
+
+/*
+ * Parse a given libyang base type into the corresponding
+ * json type
+ */
 jsonDataType parseBaseType(LY_DATA_TYPE type)
 {
 	if (type == LY_TYPE_BOOL)
@@ -50,6 +107,10 @@ jsonDataType parseBaseType(LY_DATA_TYPE type)
     // TODO: what about LY_TYPE_BINARY, LY_TYPE_BITS, LY_TYPE_EMPTY,
     // LY_TYPE_IDENT, LY_TYPE_INST, LY_TYPE_LEAFREF, LY_TYPE_UNKNOWN?
 }
+
+/*
+ * Translate the types of a union into a vector
+ */
 /*
 vector<jsonDataType> parseType(struct lys_type *type)
 //jsonDataType parseType(struct lys_type *type)
@@ -66,6 +127,9 @@ vector<jsonDataType> parseType(struct lys_type *type)
 }
 */
 
+/*
+ * Extract the type from a given lys_type struct as string
+ */
 string parseTypeToString(struct lys_type *type)
 {
 	if (type->base == LY_TYPE_BOOL)
@@ -92,9 +156,13 @@ string parseTypeToString(struct lys_type *type)
 	}
 
     // TODO: what about LY_TYPE_BINARY, LY_TYPE_BITS, LY_TYPE_EMPTY,
-    // LY_TYPE_IDENT, LY_TYPE_INST, LY_TYPE_LEAFREF, LY_TYPE_UNKNOWN?
+    // LY_TYPE_INST, LY_TYPE_LEAFREF, LY_TYPE_UNKNOWN?
 }
 
+/*
+ * Translate the default value given by a leaf node as char array
+ * into the type that corresponds to the type of the given sdfData element
+ */
 sdfData* parseDefault(const char *value, sdfData *data)
 {
 	if (value != NULL)
@@ -109,10 +177,11 @@ sdfData* parseDefault(const char *value, sdfData *data)
 
 			else if(data->getSimpType() == json_boolean)
 			{
-				cout << typeid(value).name() << endl;
-				if (value == "true")
+				//cout << typeid("true").name() << endl;
+				//cout << strcmp(value, "true") << endl;
+				if (strcmp(value, "true") == 0)
 					data->setDefaultBool(true);
-				else if (value == "false")
+				else if (strcmp(value, "false") == 0)
 					data->setDefaultBool(false);
 			}
 			else if(data->getSimpType() == json_integer)
@@ -122,7 +191,9 @@ sdfData* parseDefault(const char *value, sdfData *data)
 	return data;
 }
 
-// uses regex to take apart range strings (e.g. "0..1" to 0 and 1)
+/*
+ * Uses regex to take apart range strings (e.g. "0..1" to 0 and 1)
+ */
 vector<float> rangeToFloat(const char *range)
 {
     cmatch cm;
@@ -132,7 +203,10 @@ vector<float> rangeToFloat(const char *range)
 
 }
 
-// the element is translated according to its type
+/*
+ *  Information from the given lys_type struct is translated
+ *  and set accordingly in the given sdfData element
+ */
 sdfData* typeToSdfData(struct lys_type *type, sdfData *data)
 {
 	// if type does not refer to a built-in type
@@ -206,8 +280,6 @@ sdfData* typeToSdfData(struct lys_type *type, sdfData *data)
 		}
 		else if (type->info.str.length != NULL)
 		{
-			//minLength = atoi(tpdf->type.info.str.length[0].expr);
-			//maxLength = atoi(tpdf->type.info.str.length[1].expr);
 			vector<float> min_max
 				= rangeToFloat(type->info.str.length[0].expr);
 			minLength = min_max[0];
@@ -266,6 +338,10 @@ sdfData* typeToSdfData(struct lys_type *type, sdfData *data)
 	return data;
 }
 
+/*
+ * The information is extracted from the given lys_tpdf struct and
+ * a corresponding sdfData object is generated
+ */
 sdfData* typedefToSdfData(struct lys_tpdf *tpdf)
 {
 	//vector<jsonDataType> type = parseType(&tpdf->type);
@@ -286,11 +362,30 @@ sdfData* typedefToSdfData(struct lys_tpdf *tpdf)
 	return data;
 }
 
+/*
+ * The information is extracted from the given lys_node_leaf struct and
+ * a corresponding sdfProperty object is generated
+ */
 sdfProperty* leafToSdfProperty(struct lys_node_leaf *node)
 {
-	sdfProperty *property = new sdfProperty(avoidNull(node->name), avoidNull(node->dsc),
+	sdfProperty *property = new sdfProperty(avoidNull(node->name),
+			avoidNull(node->dsc),
 			parseBaseType(node->type.base));
-	typeToSdfData(&node->type, property);
+
+	if (node->type.base == LY_TYPE_LEAFREF)
+	{
+		property->setType("");
+		//cout << node->type.info.lref.path << endl;
+		//cout << expandPath(node) << endl;
+		property->setReference(leafs[expandPath(node)]);
+	}
+	else
+	{
+		typeToSdfData(&node->type, property);
+		// save reference to leaf for ability to convert leafref-type
+		leafs[generatePath((lys_node*)node)] = property;
+	}
+
 	if (node->units != NULL)
 	{
 		property->setUnits(node->units);
@@ -298,15 +393,35 @@ sdfProperty* leafToSdfProperty(struct lys_node_leaf *node)
 	parseDefault(node->dflt, property);
 
 	// TODO: keyword mandatory -> sdfRequired
-
 	return property;
 }
 
+/*
+ * The information is extracted from the given lys_node_leaflist struct and
+ * a corresponding sdfProperty object is generated
+ */
 sdfProperty* leaflistToSdfProperty(struct lys_node_leaflist *node)
 {
 	sdfProperty *property = new sdfProperty(avoidNull(node->name),
 			avoidNull(node->dsc), json_array);
-	typeToSdfData(&node->type, property);
+
+	// if the node has type leafref
+	if (node->type.base == LY_TYPE_LEAFREF)
+	{
+		property->setType("");
+		property->setArrayData(vector<string>(), NAN, NAN, false,
+				"", leafs[expandPath(node)], NAN, NAN);
+	}
+
+	else
+	{
+		// convert all information from the type of the node
+		typeToSdfData(&node->type, property);
+
+		// save reference to leaf-list for ability to convert leafref-type
+		leafs[generatePath((lys_node*)node)] = property;
+	}
+
 	// the number of minimal and maximal items is only valid if at least
 	// one of them is not 0
 	if (node->min != 0 || node->max != 0)
@@ -321,55 +436,84 @@ sdfProperty* leaflistToSdfProperty(struct lys_node_leaflist *node)
 	}
 
 	// TODO: default values for other types (template?)
+	// convert default value of array (if it is given)
 	vector<string> dflt;
 	for (int i = 0; i < node->dflt_size; i++)
 		dflt.push_back(node->dflt[i]);
 	property->setDefaultArray(dflt);
-	// type array
-    // items of type sdfData-typedef of leaflist for complex datatypes?
-	//sdfData *datatype = new sdfData();
 
 	return property;
 }
 
+/*
+ * The information is extracted from the given lys_node_rpc_action struct and
+ * a corresponding sdfAction object is generated
+ */
 sdfAction* rpcToSdfAction(struct lys_node_rpc_action *node)
 {
-	sdfAction *action = new sdfAction(avoidNull(node->name), avoidNull(node->dsc));
+	sdfAction *action = new sdfAction(avoidNull(node->name),
+			avoidNull(node->dsc));
 
 	// convert typedefs into sdfData of the action
 	for (int i = 0; i < node->tpdf_size; i++)
 		action->addDatatype(typedefToSdfData(&node->tpdf[i]));
-
 	return action;
 }
 
+/*
+ * The information is extracted from the given lys_node_notif struct and
+ * a corresponding sdfEvent object is generated
+ */
 sdfEvent* notificationToSdfEvent(struct lys_node_notif *node)
 {
-	sdfEvent *event = new sdfEvent(avoidNull(node->name), avoidNull(node->dsc));
+	sdfEvent *event = new sdfEvent(avoidNull(node->name),
+			avoidNull(node->dsc));
+	// convert typedefs into sdfData of the event
+	for (int i = 0; i < node->tpdf_size; i++)
+		event->addDatatype(typedefToSdfData(&node->tpdf[i]));
 
 	return event;
 }
 
+/*
+ * The information is extracted from the given lys_node_container struct and
+ * a corresponding sdfThing object is generated
+ */
 sdfThing* containerToSdfThing(struct lys_node_container *node)
 {
-	sdfThing *thing = new sdfThing(avoidNull(node->name), avoidNull(node->dsc));
+	sdfThing *thing = new sdfThing(avoidNull(node->name),
+			avoidNull(node->dsc));
 	return thing;
 }
 
+/*
+ * The information is extracted from the given lys_node_grp struct and
+ * a corresponding sdfThing object is generated
+ */
 sdfThing* groupingToSdfThing(struct lys_node_grp *node)
 {
-	sdfThing *thing = new sdfThing(avoidNull(node->name), avoidNull(node->dsc));
+	sdfThing *thing = new sdfThing(avoidNull(node->name),
+			avoidNull(node->dsc));
 
 	return thing;
 }
 
+/*
+ * The information is extracted from the given lys_submodule struct and
+ * a corresponding sdfThing object is generated
+ */
 sdfThing* submoduleToSdfThing(struct lys_submodule *submod)
 {
-	sdfThing *thing = new sdfThing(avoidNull(submod->name), avoidNull(submod->dsc));
+	sdfThing *thing = new sdfThing(avoidNull(submod->name),
+			avoidNull(submod->dsc));
 
 	return thing;
 }
 
+/*
+ * The information is extracted from the given lys_module struct and
+ * a corresponding sdfThing object is generated
+ */
 sdfThing* moduleToSdfThing(const struct lys_module *module)
 {
 
@@ -403,7 +547,7 @@ sdfThing* moduleToSdfThing(const struct lys_module *module)
 			for (int j = 0; j < module->ident[i].base_size; j++)
 			{
 				ident->setReference(identities[module->ident[i].base[j]->name]);
-				cout << module->ident[i].base[j]->name << endl;
+				//cout << module->ident[i].base[j]->name << endl;
 			}
 			tpdfObject->addDatatype(ident);
 			identities[module->ident[i].name] = ident;
@@ -433,34 +577,51 @@ sdfThing* moduleToSdfThing(const struct lys_module *module)
 		struct lys_node *start1 = elem0;
 		struct lys_node *elem1;
 		struct lys_node *next1;
+		struct lys_node *last1 = NULL;
 		LY_TREE_DFS_BEGIN (start1, next1, elem1)
 		//do
 		{
 			// check node type (container, grouping, leaf, etc.)
-			if (elem1->nodetype == LYS_CONTAINER)
+			if (elem1->nodetype == LYS_CONTAINER
+					|| elem1->nodetype == LYS_INPUT
+					|| elem1->nodetype == LYS_OUTPUT)
 			{
+				// containers are converted to sdfThings
+				// (because they can contain more sdfThings)
 				childThing = containerToSdfThing((lys_node_container*)elem1);
 				parentThing->addThing(childThing);
 				thingcnt++;
 			}
 			else if (elem1->nodetype == LYS_GROUPING)
 			{
+				// groupings are converted to sdfThings
+				// (because they can contain more sdfThings)
 				childThing = groupingToSdfThing((lys_node_grp*)elem1);
 				parentThing->addThing(childThing);
 				thingcnt++;
 			}
 			else if (elem1->nodetype == LYS_NOTIF)
 			{
-				childObject = new sdfObject(parentThing->getLabel());
+				// notifications are converted to sdfThings with a
+				// corresponding sdfAction
+				// (rpcs are not leaf nodes so the sdfThing is needed
+				// to allow for further nodes)
+				childThing = new sdfThing(avoidNull(elem1->name));
+				childObject = new sdfObject(avoidNull(elem1->name));
 				childEvent = notificationToSdfEvent((lys_node_notif*)elem1);
 				childObject->addEvent(childEvent);
-				parentThing->addObject(childObject);
+				parentThing->addThing(childThing);
+				childThing->addObject(childObject);
 				objcnt++;
 			}
 			else if (elem1->nodetype == LYS_RPC)
 			{
-				childThing = new sdfThing(parentThing->getLabel() + "-action");
-				childObject = new sdfObject(parentThing->getLabel() + "-action");
+				// rpcs/actions are converted to sdfThings with a
+				// corresponding sdfAction
+				// (rpcs are not leaf nodes so the sdfThing is needed
+				// to allow for further nodes)
+				childThing = new sdfThing(avoidNull(elem1->name));
+				childObject = new sdfObject(avoidNull(elem1->name));
 				childAction = rpcToSdfAction((lys_node_rpc_action*)elem1);
 				childObject->addAction(childAction);
 				parentThing->addThing(childThing);
@@ -469,15 +630,44 @@ sdfThing* moduleToSdfThing(const struct lys_module *module)
 			}
 			else if (elem1->nodetype == LYS_LEAF)
 			{
+				// leafs are converted to sdfObjects with a
+				// corresponding sdfProperty (or sdfData if they are
+				// input/output of an action or event
 				childObject = new sdfObject(parentThing->getLabel());
 				childProperty = leafToSdfProperty((lys_node_leaf*)elem1);
-				childObject->addProperty(childProperty);
+				if (last1->nodetype == LYS_INPUT)
+				{
+					childObject->setLabel(parentThing->getLabel()
+							+ "-data");
+					sdfData *childData = (sdfData*)childProperty;
+					childAction->addInputData(childData);
+					childObject->addDatatype(childData);
+				}
+				else if (last1->nodetype == LYS_OUTPUT)
+				{
+					childObject->setLabel(parentThing->getLabel()
+							+ "-data");
+					sdfData *childData = (sdfData*)childProperty;
+					childAction->addOutputData(childData);
+					childObject->addDatatype(childData);
+				}
+				else
+				{
+					childObject->setLabel(parentThing->getLabel()
+							+ "-properties");
+					childObject->setDescription("Properties of "
+							+ parentThing->getLabel());
+					childObject->addProperty(childProperty);
+				}
 				parentThing->addObject(childObject);
 				objcnt++;
 			}
 			else if (elem1->nodetype == LYS_LEAFLIST)
 			{
-				childObject = new sdfObject(string(elem1->name) + "-object");
+				// leaflists are converted to sdfObjects with one
+				// corresponding sdfProperty of type array
+				childObject = new sdfObject(parentThing->getLabel(),
+						"Properties of " + parentThing->getLabel());
 				childProperty = leaflistToSdfProperty((lys_node_leaflist*)elem1);
 				childObject->addProperty(childProperty);
 				parentThing->addObject(childObject);
@@ -551,16 +741,17 @@ sdfThing* moduleToSdfThing(const struct lys_module *module)
 				// sdfObjects cannot have objects themselves and
 				// the object should be filled on the spot?
 			}
+			last1 = elem1;
 			LY_TREE_DFS_END(start1, next1, elem1);
 		}
 	}
 
-	cout << "things: " << thingcnt << endl;
-	cout << "objects: " << objcnt << endl;
+	cout << "Created " << thingcnt << " sdfThings"
+			<< " and " << objcnt << " sdfObjects" << endl;
 	return thing;
 }
 
-// TODO: choice, list (with arrays somehow???), anydata, uses, case,
+// TODO: choice, list (with arrays???), anydata, uses, case,
 // inout (?), augment
 
 
@@ -601,7 +792,8 @@ int main(int argc, char** argv)
         }
 
         // load the required context
-        ly_ctx *ctx = ly_ctx_new("yang/", 0);
+        ly_ctx *ctx = ly_ctx_new(argv[3], 0);
+        // load the module
         const lys_module *module = lys_parse_path(ctx, argv[1], LYS_IN_YANG);
 
         if (module == NULL)
@@ -610,7 +802,9 @@ int main(int argc, char** argv)
         	return -1;
         }
 
+        // Convert the module to a sdfThing
         sdfThing *moduleThing = moduleToSdfThing(module);
+        // Print the sdfThing into a file (in sdf.json format)
         moduleThing->thingToFile(argv[2]);
 		/*
 		//TEST
@@ -647,7 +841,7 @@ int main(int argc, char** argv)
         }
 
         const lys_module *module;
-        // nlohman to iterate over sdf?
+        // nlohman to iterate over sdf
         // fill module
         lys_print_path(argv[2], module, LYS_OUT_YANG, NULL, 0, 0);
 

@@ -54,7 +54,12 @@ sdfCommon::sdfCommon(string _label, string _description, sdfCommon *_reference,
 			: description(_description), label(_label), reference(_reference),
 			  required(_required)
 {
-	this->parent = NULL;
+	//this->parent = NULL;
+}
+
+void sdfCommon::setLabel(string _label)
+{
+	this->label = _label;
 }
 
 string sdfCommon::getDescription()
@@ -142,7 +147,8 @@ string sdfObjectElement::generateReferenceString()
 {
 	if (this->getParentObject() == NULL)
 	{
-		cerr << this->getLabel() + " has no assigned parent object."
+		cerr << "generateReferenceString(): "
+				<< this->getLabel() + " has no assigned parent object."
 				<< endl;
 		return "";
 	}
@@ -219,7 +225,8 @@ sdfData::sdfData() : sdfData("", "", "")
 sdfData::sdfData(string _label, string _description, string _type,
 		sdfCommon *_reference, vector<sdfCommon*> _required,
 		sdfCommon *_parentCommon)
-			: sdfCommon(_label, _description, _reference, _required)
+			: sdfCommon(_label, _description, _reference, _required),
+			  parent(_parentCommon)
 {
 	simpleType = stringToJsonDType(_type);
 	if (simpleType == json_type_undef)
@@ -816,7 +823,7 @@ void sdfEvent::addOutputData(sdfData *outputData)
 void sdfEvent::addDatatype(sdfData *datatype)
 {
 	this->datatypes.push_back(datatype);
-	datatype->setParentCommon(this);
+	datatype->setParentCommon((sdfCommon*)this);
 }
 
 vector<sdfData*> sdfEvent::getDatatypes()
@@ -864,7 +871,7 @@ void sdfAction::addOutputData(sdfData *outputData)
 void sdfAction::addDatatype(sdfData *datatype)
 {
 	this->datatypes.push_back(datatype);
-	datatype->setParentCommon(this);
+	datatype->setParentCommon((sdfCommon*)this);
 }
 
 sdfAction::sdfAction(string _label, string _description, sdfCommon *_reference,
@@ -993,8 +1000,10 @@ void sdfObject::addEvent(sdfEvent *event)
 
 void sdfObject::addDatatype(sdfData *datatype)
 {
+	//cout << this->getLabel() << endl;
 	this->datatypes.push_back(datatype);
-	datatype->setParentCommon(this);
+	datatype->setParentCommon((sdfCommon*)this);
+	//datatype->setParentCommon(this);
 
 }
 
@@ -1241,9 +1250,10 @@ sdfThing* sdfThing::fileToThing(string path)
 	input.close();
 	return this->jsonToThing(json_input);
 }
-
+/*
 void sdfCommon::setParentCommon(sdfCommon *parentCommon)
 {
+	//cout << parentCommon->getLabel() << endl;
 	this->parent = parentCommon;
 }
 
@@ -1251,7 +1261,7 @@ sdfCommon* sdfCommon::getParentCommon()
 {
 	return this->parent;
 }
-
+*/
 void sdfCommon::setDescription(string dsc)
 {
 	this->description = dsc;
@@ -1371,4 +1381,14 @@ void sdfData::setDefaultArray(vector<string> defaultArray)
 {
 	this->defaultArray = defaultArray;
 	this->defaultDefined = true;
+}
+
+void sdfData::setParentCommon(sdfCommon *parentCommon)
+{
+	this->parent = parentCommon;
+}
+
+sdfCommon* sdfData::getParentCommon()
+{
+	return this->parent;
 }

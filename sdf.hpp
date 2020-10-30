@@ -57,12 +57,13 @@ public:
     string getLabel();
     sdfCommon* getReference();
     vector<sdfCommon*> getRequired();
-	sdfCommon* getParentCommon();
+	//sdfCommon* getParentCommon();
     // setters
+    void setLabel(string _label);
     void setDescription(string dsc);
     void addRequired(sdfCommon *common);
     void setReference(sdfCommon *common);
-    void setParentCommon(sdfCommon *parentCommon);
+    //void setParentCommon(sdfCommon *parentCommon);
     // printing
     virtual string generateReferenceString() = 0;
     json commonToJson(json prefix);
@@ -71,7 +72,7 @@ private:
     string label;
     sdfCommon *reference;
     vector<sdfCommon*> required;
-	sdfCommon *parent;
+	//sdfCommon *parent;
 };
 
 class sdfObjectElement : virtual public sdfCommon
@@ -224,6 +225,7 @@ public:
 	void setDefaultString(string defaultString);
 	void setConstantArray(vector<string> constantArray);
 	void setDefaultArray(vector<string> defaultArray);
+    void setParentCommon(sdfCommon *parentCommon);
     // getters for member variables
     bool getReadable();
     bool getWritable();
@@ -264,6 +266,7 @@ public:
 	string getUnits();
 	vector<string> getConstantArray();
 	vector<string> getDefaultArray();
+	sdfCommon* getParentCommon();
 	// parsing
 	string generateReferenceString();
     json dataToJson(json prefix);
@@ -323,6 +326,7 @@ private:
     bool nullable;
     string contentFormat;
     sdfSubtype subtype;
+	sdfCommon *parent;
 };
 
 class sdfEvent : virtual public sdfObjectElement
@@ -489,3 +493,4 @@ class sdfProduct : sdfThing
 };
 
 #endif
+
