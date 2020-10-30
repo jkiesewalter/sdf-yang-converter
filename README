@@ -1,0 +1,2 @@
+- libyang is used to parse
+- The YANG GitHub repository is needed to load the context of a YANG file

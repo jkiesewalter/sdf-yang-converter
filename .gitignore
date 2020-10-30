@@ -1,0 +1,11 @@
+Debug/
+json/
+libyang/
+playground/
+yang/
+ietf-l2vpn-svc.yang
+ietf-alarms-x733@2019-09-11.yang
+converter.o
+sdf.o
+test.sdf.json
+test.yang
