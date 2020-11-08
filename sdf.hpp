@@ -8,6 +8,7 @@
 #include<string>
 #include<vector>
 #include <cmath>
+#include <regex>
 #include <nlohmann/json.hpp>
 
 // for convenience
@@ -40,11 +41,15 @@ enum sdfSubtype
 	sdf_subtype_undef
 };
 
-string jsonDTypeToString(jsonDataType type);
-jsonDataType stringToJsonDType(string str);
-
+class sdfCommon;
 class sdfThing;
 class sdfObject;
+
+string jsonDTypeToString(jsonDataType type);
+jsonDataType stringToJsonDType(string str);
+sdfCommon* refToCommon(string ref);
+string correctValue(string val);
+
 
 // sdfObject, sdfProperty, sdfAction, sdfEvent and sdfData are sdfCommons
 class sdfCommon
@@ -67,6 +72,7 @@ public:
     // printing
     virtual string generateReferenceString() = 0;
     json commonToJson(json prefix);
+    void jsonToCommon(json input);
 private:
     string description;
     string label;
@@ -100,7 +106,7 @@ public:
     string getLicense();
     // parsing
     json infoToJson(json prefix);
-    sdfInfoBlock jsonToInfo(json input);
+    sdfInfoBlock* jsonToInfo(json input);
 private:
     string title;
     string version;
@@ -111,19 +117,16 @@ private:
 class sdfNamespaceSection
 {
 public:
-    sdfNamespaceSection(string _ns = "",
-						string _ns_short = "",
-						string _default_ns = "");
+    sdfNamespaceSection(map<string, string> _namespaces = {},
+    					string _default_ns = "");
     // getters
-    string getNamespace();
-    string getShortNamespace();
+    map<string, string> getNamespaces();
     string getDefaultNamespace();
     // parsing
-    json namespaceToJson(json prefix); // TODO: forgot default ns
-    sdfNamespaceSection jsonToNamespace(json input);
+    json namespaceToJson(json prefix);
+    sdfNamespaceSection* jsonToNamespace(json input);
 private:
-    string ns;
-    string ns_short;
+    map<string, string> namespaces;
     string default_ns;
 };
 
@@ -346,6 +349,7 @@ public:
     vector<sdfData*> getDatatypes();
     vector<sdfData*> getOutputData();
     // parsing
+	string generateReferenceString();
     json eventToJson(json prefix);
     sdfEvent* jsonToEvent(json input);
 private:
@@ -376,6 +380,7 @@ public:
     vector<sdfData*> getOutputData();
     vector<sdfData*> getDatatypes();
     // parsing
+	string generateReferenceString();
     json actionToJson(json prefix);
     sdfAction* jsonToAction(json input);
 
@@ -410,16 +415,16 @@ public:
 			vector<sdfAction*> _actions = {}, vector<sdfEvent*> _events = {},
 			vector<sdfData*> _datatypes = {}, sdfThing *_parentThing = NULL);
     // setters
-    void setInfo(sdfInfoBlock _info);
-    void setNamespace(sdfNamespaceSection _ns);
+    void setInfo(sdfInfoBlock *_info);
+    void setNamespace(sdfNamespaceSection *_ns);
     void addProperty(sdfProperty *property);
     void addAction(sdfAction *action);
     void addEvent(sdfEvent *event);
     void addDatatype(sdfData *datatype);
 	void setParentThing(sdfThing *parentThing);
     // getters
-    sdfInfoBlock getInfo();
-    sdfNamespaceSection getNamespace();
+    sdfInfoBlock* getInfo();
+    sdfNamespaceSection* getNamespace();
     vector<sdfProperty*> getProperties();
     vector<sdfAction*> getActions();
     vector<sdfEvent*> getEvents();
@@ -431,12 +436,13 @@ public:
     string objectToString(bool print_info_namespace = true);
     void objectToFile(string path);
     sdfObject* jsonToObject(json input);
+    sdfObject* fileToObject(string path);
 
 private:
     json actionToJson();
     json eventToJson();
-    sdfInfoBlock info;
-    sdfNamespaceSection ns;
+    sdfInfoBlock *info;
+    sdfNamespaceSection *ns;
     vector<sdfProperty*> properties;
     vector<sdfAction*> actions;
     vector<sdfEvent*> events;
@@ -452,28 +458,29 @@ public:
 			vector<sdfThing*> _things = {}, vector<sdfObject*> _objects = {},
 			sdfThing *_parentThing = NULL);
     // setters
-    void setInfo(sdfInfoBlock _info);
-    void setNamespace(sdfNamespaceSection _ns);
-    sdfInfoBlock getInfo();
-    sdfNamespaceSection getNamespace();
+    void setInfo(sdfInfoBlock *_info);
+    void setNamespace(sdfNamespaceSection *_ns);
     void addThing(sdfThing *thing);
     void addObject(sdfObject *object);
 	void setParentThing(sdfThing *parentThing);
     // getters
-    vector<sdfThing*> getThings();
-    vector<sdfObject*> getObjects();
-	sdfThing* getParentThing();
+    sdfInfoBlock* getInfo() const;
+    sdfNamespaceSection* getNamespace() const;
+    vector<sdfThing*> getThings() const;
+    vector<sdfObject*> getObjects() const;
+	sdfThing* getParentThing() const;
     // parsing
     string generateReferenceString();
-    json thing_to_json(json prefix, bool print_info_namespace = false);
+    json thingToJson(json prefix, bool print_info_namespace = false);
     string thingToString(bool print_info_namespace = true);
     void thingToFile(string path);
-    sdfThing* jsonToThing(json input);
+    sdfThing* jsonToThing(json input); // TODO: return void?
+    sdfThing* jsonToNestedThing(json input);
     sdfThing* fileToThing(string path);
 
 private:
-    sdfInfoBlock info;
-    sdfNamespaceSection ns;
+    sdfInfoBlock *info;
+    sdfNamespaceSection *ns;
     vector<sdfThing*> childThings;
     vector<sdfObject*> childObjects;
     sdfThing *parent;

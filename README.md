@@ -39,3 +39,15 @@
 
 
 ## Direction SDF->YANG
+
+|SDF statement|translated to YANG|
+|-|-|
+|sdfProduct?||
+|sdfThing|module on highest level, container or grouping otherwise|
+|sdfObject|module on highest level, container or grouping otherwise|
+|sdfProperty|leaf; leaf-list for JSON type array|
+|sdfAction|rpc / action with leafs for each sdfData quality; leafref for each sdfInputData, sdfRequiredInputData and sdfOutputData|
+|sdfEvent|notification with leafs for each sdfData quality; leafref for each sdfOutputData|
+|sdfData|leaf; leaf-list for JSON type array; typedef?|
+|sdfRef|leafref / reference to typedef?|
+|||

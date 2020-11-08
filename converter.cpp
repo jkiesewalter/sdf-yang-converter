@@ -519,9 +519,10 @@ sdfThing* moduleToSdfThing(const struct lys_module *module)
 
 	sdfThing *thing = new sdfThing(avoidNull(module->name),
 			avoidNull(module->dsc));
-    thing->setInfo(sdfInfoBlock(avoidNull(module->name)));
-    thing->setNamespace(sdfNamespaceSection(avoidNull(module->ns),
-    		avoidNull(module->prefix)));
+    thing->setInfo(new sdfInfoBlock(avoidNull(module->name)));
+    map<string, string> nsMap;
+    nsMap[avoidNull(module->prefix)] = avoidNull(module->ns);
+    thing->setNamespace(new sdfNamespaceSection(nsMap));
 
     if (module->tpdf_size > 0)
     {
@@ -754,11 +755,26 @@ sdfThing* moduleToSdfThing(const struct lys_module *module)
 // TODO: choice, list (with arrays???), anydata, uses, case,
 // inout (?), augment
 
+/*
+ * The information from a sdfThing is transferred into a YANG module
+ */
+struct lys_module* sdfThingToModule(sdfThing *thing)
+{
+    struct lys_module *module;
+	printf("in sdfThingToModule\n");
+    module->name = "oh no";//thing->getLabel().c_str();
+    module->dsc = "oh hi";//thing->getDescription().c_str();
+    module->prefix = "ietf";
+    module->ns = "stand";
+    //module->data = new lys_node();
+	return module;
+}
 
-int main(int argc, char** argv)
+int main(int argc, const char** argv)
 {
     // Executed by calling: sdf_converter input_file output_file
 
+	/*
     // open specified input file
     std::ifstream input_file;
     std::string input_string;
@@ -776,6 +792,7 @@ int main(int argc, char** argv)
         perror("Error opening file");
         return -1;
     }
+    */
 
     // regexs to check file formats
     std::regex yang_regex (".*\\.yang");
@@ -840,10 +857,22 @@ int main(int argc, char** argv)
             //return -1;
         }
 
-        const lys_module *module;
-        // nlohman to iterate over sdf
-        // fill module
-        lys_print_path(argv[2], module, LYS_OUT_YANG, NULL, 0, 0);
+        // TODO: fill module
+        sdfObject *moduleObject = new sdfObject();
+    	sdfThing *moduleThing = new sdfThing();
+        if (moduleObject->fileToObject(argv[1]) != NULL)
+        	cout << moduleObject->objectToString() << endl;
+        else
+        {
+			moduleThing->fileToThing(argv[1]);
+			cout << moduleThing->thingToString() << endl;
+        }
+        lys_module *module = sdfThingToModule(moduleThing);
+        module->ctx = ly_ctx_new(argv[3], 0);
+        const lys_module *const_module = module;
+        //const_module = lys_parse_path(module->ctx, argv[4], LYS_IN_YANG);
+        printf("Made it!\n");
+        //lys_print_path(argv[2], const_module, LYS_OUT_YANG, NULL, 0, 0);
 
         return 0;
     }
