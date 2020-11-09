@@ -3,13 +3,9 @@ json/
 libyang/
 playground/
 yang/
-ietf-l2vpn-svc.yang
-ietf-alarms-x733@2019-09-11.yang
-sdf
-converter.o
-sdf.o
-test.sdf.json
-test.yang
+*.o
+*.sdf.json
+*.yang
 .cproject
 .project
 .settings/

@@ -6,3 +6,6 @@ converter.o: converter.cpp
 
 sdf.o: sdf.cpp
 	g++ -c sdf.cpp
+	
+clean:
+	rm *.o converter
