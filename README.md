@@ -2,10 +2,10 @@
 
 * currently, only the direction YANG->SDF is (partly) implemented
 * run with './converter path/to/input/file path/to/output/file path/to/yang/repo', e.g. './converter yang/standard/ietf/RFC/ietf-l2vpn-svc.yang test.sdf.json ./yang' for conversion from yang to sdf (currently, only sdf.json is supported as file format for sdf)
-* a copy of the YANG GitHub repository is needed to load the context of a YANG file
-* libyang is used to parse yang files
-* nlohmann/json is used to parse json files
-* compile with 'g++ converter.cpp sdf.cpp -o converter -lyang' (Makefile is useless as of now)
+* a copy of the [YANG GitHub repository](https://github.com/YangModels/yang) is needed to load the context of a YANG file
+* [libyang](https://github.com/CESNET/libyang) is needed to parse YANG files
+* [nlohmann/json](https://github.com/nlohmann/json) is needed to parse JSON files
+* compile with 'make' or 'g++ converter.cpp sdf.cpp -o converter -lyang'
 
 ## Direction YANG->SDF
 
