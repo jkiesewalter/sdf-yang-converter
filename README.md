@@ -1,5 +1,6 @@
 # SDF-YANG-Converter
 
+* currently, only the direction YANG->SDF is (partly) implemented
 * run with './converter path/to/input/file path/to/output/file path/to/yang/repo', e.g. './converter yang/standard/ietf/RFC/ietf-l2vpn-svc.yang test.sdf.json ./yang' for conversion from yang to sdf (currently, only sdf.json is supported as file format for sdf)
 * a copy of the YANG GitHub repository is needed to load the context of a YANG file
 * libyang is used to parse yang files
