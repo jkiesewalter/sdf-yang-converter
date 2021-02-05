@@ -73,12 +73,13 @@ sdfCommon* refToCommon(string ref)
     }
     else if (existingDefinitons[ref] != NULL)
     {
-        cout<<"refToCommon: "<<existingDefinitons[ref]->getLabel()<<endl;
+        //cout<<"refToCommon: "<<existingDefinitons[ref]->getLabel()<<endl;
         return existingDefinitons[ref];
     }
     else
     {
-        cerr << "refToCommon(): definition does not exist" << endl;
+        cerr << "refToCommon(): definition for reference "
+                << ref << " does not exist" << endl;
         return NULL;
     }
 }
@@ -118,6 +119,11 @@ string sdfCommon::getDescription()
 string sdfCommon::getLabel()
 {
     return label;
+}
+
+const char* sdfCommon::getLabelAsArray()
+{
+    return label.c_str();
 }
 
 sdfCommon* sdfCommon::getReference()
@@ -162,7 +168,7 @@ json sdfCommon::commonToJson(json prefix)
     if (this->getReference() != NULL)
     {
         prefix["sdfRef"] = this->getReference()->generateReferenceString();
-        cout << this->reference->generateReferenceString()<<endl;
+        //cout << this->reference->generateReferenceString()<<endl;
     }
     if (this->getLabel() != "")
         prefix["label"] = this->getLabel();
@@ -201,7 +207,7 @@ string sdfObjectElement::generateReferenceString()
 {
     if (this->getParentObject() == NULL)
     {
-        cerr << "generateReferenceString(): "
+        cerr << "sdfObjectElement::generateReferenceString(): "
                 << this->getLabel() + " has no assigned parent object."
                 << endl;
         return "";
@@ -239,7 +245,7 @@ string sdfInfoBlock::getLicense()
 
 json sdfInfoBlock::infoToJson(json prefix)
 {
-    cout << "info to json" << endl;
+    //cout << "info to json" << endl;
     if (this->getTitle() != "")
         prefix["info"]["title"] = this->getTitle();
     if (this->getVersion() != "")
@@ -269,7 +275,7 @@ string sdfNamespaceSection::getDefaultNamespace()
 
 json sdfNamespaceSection::namespaceToJson(json prefix)
 {
-    cout << "ns to json" << endl;
+    //cout << "ns to json" << endl;
     for (auto it : this->namespaces)
     {
         prefix["namespace"][it.first] = it.second;
@@ -309,6 +315,8 @@ sdfData::sdfData(string _label, string _description, string _type,
     defaultNumber = NAN;
     constantInt = -1;
     defaultInt = -1;
+    constantAsCharArray = NULL;
+    defaultAsCharArray = NULL;
     exclusiveMaximum_bool = false;
     exclusiveMinimum_bool = false;
     minLength = NAN;
@@ -735,7 +743,8 @@ string sdfData::generateReferenceString()
 {
     if (this->getParentCommon() == NULL)
     {
-        cerr << "sdfData object " + this->getLabel()
+        cerr << "sdfData::generateReferenceString(): sdfData object "
+                + this->getLabel()
                 + " has no assigned parent object. Possibly it was only"
                 + " added as an output or input data reference and not"
                 + " as a datatype definition."
@@ -862,8 +871,8 @@ json sdfData::dataToJson(json prefix)
         }
     }
     prefix["sdfData"][this->getLabel()] = data;
-    if (this->getLabel() == "temperature")
-        cout << data.dump(4)<<endl;
+    //if (this->getLabel() == "temperature")
+        //cout << data.dump(4)<<endl;
 
     return prefix;
 }
@@ -1299,7 +1308,7 @@ void sdfThing::setParentThing(sdfThing *parentThing)
 string sdfThing::generateReferenceString()
 {
     if (this->parent != NULL)
-        return this->parent->generateReferenceString() + "/"
+        return this->parent->generateReferenceString() + "/sdfThing/"
                 + this->getLabel();
     else
         return "#/sdfThing/" + this->getLabel();
@@ -1309,7 +1318,7 @@ void sdfCommon::jsonToCommon(json input)
 {
     for (auto it : input.items())
     {
-        cout << "jsonToCommon: " << it.key() << endl;
+        //cout << "jsonToCommon: " << it.key() << endl;
         if (it.key() == "label")
             this->setLabel(correctValue(it.value()));
         else if (it.key() == "description")
@@ -1322,7 +1331,7 @@ void sdfCommon::jsonToCommon(json input)
                     this->addRequired(refToCommon(jt));
     }
     existingDefinitons[this->generateReferenceString()] = this;
-    cout << "jsonToCommon: " << this->generateReferenceString() << endl;
+    //cout << "jsonToCommon: " << this->generateReferenceString() << endl;
 }
 
 sdfData* sdfData::jsonToData(json input)
@@ -1495,6 +1504,7 @@ sdfData* sdfData::jsonToData(json input)
                 this->subtype = sdf_subtype_undef;
         }
     }
+    this->jsonToCommon(input);
     return this;
 }
 
@@ -1523,6 +1533,7 @@ sdfEvent* sdfEvent::jsonToEvent(json input)
             }
         }
     }
+    this->jsonToCommon(input);
     return this;
 }
 
@@ -1565,6 +1576,7 @@ sdfAction* sdfAction::jsonToAction(json input)
             }
         }
     }
+    this->jsonToCommon(input);
     return this;
 }
 
@@ -1572,6 +1584,7 @@ sdfProperty* sdfProperty::jsonToProperty(json input)
 {
     this->jsonToCommon(input);
     this->jsonToData(input);
+    this->jsonToCommon(input);
     return this;
 }
 
@@ -1580,7 +1593,7 @@ sdfObject* sdfObject::jsonToObject(json input)
     this->jsonToCommon(input);
     for (json::iterator it = input.begin(); it != input.end(); ++it)
     {
-        cout << "jsonToObject: " << it.key() << endl;
+        //cout << "jsonToObject: " << it.key() << endl;
         if (it.key() == "info" && !it.value().empty())
         {
             this->setInfo(new sdfInfoBlock());
@@ -1654,6 +1667,9 @@ sdfObject* sdfObject::jsonToObject(json input)
             this->jsonToObject(input[it.key()]);
         }*/
     }
+    // jsonToCommon needs to be called twice because of sdfRequired
+    // (which cannot be filled before the rest of the object)
+    this->jsonToCommon(input);
     return this;
 }
 
@@ -1682,7 +1698,8 @@ sdfThing* sdfThing::jsonToNestedThing(json input)
     {
         if (it.key() == "sdfThing" && !it.value().empty())
         {
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
             {
                 sdfThing *childThing = new sdfThing();
                 this->addThing(childThing);
@@ -1691,7 +1708,8 @@ sdfThing* sdfThing::jsonToNestedThing(json input)
         }
         else if (it.key() == "sdfObject" && !it.value().empty())
         {
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
             {
                 sdfObject *childObject = new sdfObject();
                 this->addObject(childObject);
@@ -1699,6 +1717,7 @@ sdfThing* sdfThing::jsonToNestedThing(json input)
             }
         }
     }
+    this->jsonToCommon(input);
     return this;
 }
 
@@ -1709,7 +1728,7 @@ sdfThing* sdfThing::jsonToThing(json input)
 
     for (json::iterator it = input.begin(); it != input.end(); ++it)
     {
-        cout << "jsonToThing: " << it.key() << endl;
+        //cout << "jsonToThing: " << it.key() << endl;
         if (it.key() == "info" && !it.value().empty())
         {
             this->setInfo(new sdfInfoBlock());
@@ -1726,7 +1745,8 @@ sdfThing* sdfThing::jsonToThing(json input)
         }
         else if (it.key() == "sdfThing" && !it.value().empty())
         {
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
             {
                 //sdfThing *childThing;
                 //childThing->jsonToThing(input["sdfThing"][jt.key()]);
@@ -1736,7 +1756,8 @@ sdfThing* sdfThing::jsonToThing(json input)
         }
         else if (it.key() == "sdfObject" && !it.value().empty())
         {
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
             {
                 childObject = new sdfObject();
                 this->addObject(childObject);
@@ -1744,6 +1765,7 @@ sdfThing* sdfThing::jsonToThing(json input)
             }
         }
     }
+    this->jsonToCommon(input);
     return this;
 }
 
@@ -1946,4 +1968,115 @@ sdfNamespaceSection* sdfNamespaceSection::jsonToNamespace(json input)
             this->default_ns = it.value();
     }
     return this;
+}
+
+const char* sdfCommon::getDescriptionAsArray()
+{
+    if (description != "")
+        return description.c_str();
+    return NULL;
+}
+
+std::map<const char*, const char*> sdfNamespaceSection::getNamespacesAsArrays()
+{
+    std::map<const char*, const char*> output;
+    std::map<std::string, std::string>::iterator it = namespaces.begin();
+    while (it != namespaces.end())
+    {
+        output[it->first.c_str()] = it->second.c_str();
+        it++;
+    }
+    return output;
+}
+
+const char* sdfNamespaceSection::getDefaultNamespaceAsArray()
+{
+    return this->default_ns.c_str();
+}
+
+const char* sdfInfoBlock::getTitleAsArray() const
+{
+    return this->title.c_str();
+}
+
+const char* sdfInfoBlock::getVersionAsArray() const
+{
+    return this->version.c_str();
+}
+
+const char* sdfInfoBlock::getCopyrightAsArray() const
+{
+    return this->copyright.c_str();
+}
+
+const char* sdfInfoBlock::getLicenseAsArray() const
+{
+    return this->license.c_str();
+}
+
+const char* sdfData::getUnitsAsArray() const
+{
+    return this->units.c_str();
+}
+
+const char* sdfData::getDefaultAsCharArray()
+{
+    if (!defaultDefined)
+        return NULL;
+    std::string *str;
+    if (simpleType == json_number)
+    {
+        /*
+        char buf[64];
+        if (snprintf(buf, sizeof(buf), "%f", defaultNumber) > 0)
+            defaultAsCharArray = buf;*/
+        str = new std::string(std::to_string(defaultNumber));
+        defaultAsCharArray = str->c_str();
+    }
+    else if (simpleType == json_string && defaultString != "")
+        defaultAsCharArray = defaultString.c_str();
+
+    else if (simpleType == json_boolean)
+    {
+        if (defaultBool == true)
+            defaultAsCharArray = "true";
+        else
+            defaultAsCharArray = "false";
+    }
+    else if (simpleType == json_integer)
+    {
+        str = new std::string(std::to_string(defaultInt));
+        defaultAsCharArray = str->c_str();
+    }
+
+    return defaultAsCharArray;
+}
+
+const char* sdfData::getConstantAsCharArray()
+{
+    if (!constDefined)
+        return NULL;
+    std::string str;
+    if (simpleType == json_number)
+    {
+        str = std::to_string(constantNumber);
+        constantAsCharArray = str.c_str();
+    }
+    else if (simpleType == json_string && constantString != "")
+        constantAsCharArray = constantString.c_str();
+
+    else if (simpleType == json_boolean)
+    {
+        if (constantBool == true)
+            constantAsCharArray = "true";
+        else
+            constantAsCharArray = "false";
+    }
+    else if (simpleType == json_integer)
+    {
+        str = std::to_string(constantInt);
+        constantAsCharArray = str.c_str();
+    }
+
+    return constantAsCharArray;
 }

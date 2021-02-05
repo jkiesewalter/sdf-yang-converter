@@ -7,5 +7,8 @@ converter.o: converter.cpp
 sdf.o: sdf.cpp
 	g++ -c sdf.cpp
 	
+#libyang.o: libyang/src/libyang.h
+#	g++ -c libyang/src/libyang.h
+	
 clean:
 	rm *.o converter

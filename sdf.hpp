@@ -11,10 +11,6 @@
 #include <regex>
 #include <nlohmann/json.hpp>
 
-// for convenience
-//using json = nlohmann::json;
-//using namespace std;
-
 enum jsonDataType
 {
     json_number,
@@ -59,7 +55,9 @@ public:
             sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {});
     // getters
     std::string getDescription();
+    const char* getDescriptionAsArray();
     std::string getLabel();
+    const char* getLabelAsArray();
     sdfCommon* getReference();
     std::vector<sdfCommon*> getRequired();
     //sdfCommon* getParentCommon();
@@ -104,6 +102,10 @@ public:
     std::string getVersion();
     std::string getCopyright();
     std::string getLicense();
+    const char* getTitleAsArray() const;
+    const char* getVersionAsArray() const;
+    const char* getCopyrightAsArray() const;
+    const char* getLicenseAsArray() const;
     // parsing
     nlohmann::json infoToJson(nlohmann::json prefix);
     sdfInfoBlock* jsonToInfo(nlohmann::json input);
@@ -121,7 +123,9 @@ public:
                         std::string _default_ns = "");
     // getters
     std::map<std::string, std::string> getNamespaces();
+    std::map<const char*, const char*> getNamespacesAsArrays();
     std::string getDefaultNamespace();
+    const char* getDefaultNamespaceAsArray();
     // parsing
     nlohmann::json namespaceToJson(nlohmann::json prefix);
     sdfNamespaceSection* jsonToNamespace(nlohmann::json input);
@@ -238,11 +242,13 @@ public:
     int getConstantInt();
     float getConstantNumber();
     std::string getConstantString();
+    const char * getConstantAsCharArray();
     std::string getContentFormat();
     bool getDefaultBool();
     int getDefaultInt();
     float getDefaultNumber();
     std::string getDefaultString();
+    const char * getDefaultAsCharArray();
     std::vector<bool> getEnumBool();
     std::vector<int> getEnumInt();
     std::vector<float> getEnumNumber();
@@ -267,6 +273,7 @@ public:
     std::string getType();
     bool getUniqueItems();
     std::string getUnits();
+    const char* getUnitsAsArray() const;
     std::vector<std::string> getConstantArray();
     std::vector<std::string> getDefaultArray();
     sdfCommon* getParentCommon();
@@ -290,7 +297,7 @@ private:
     std::string constantString;
     std::string defaultString;
     // only fill for type boolean
-    std::vector<bool> enumBool; // does this even make sense?
+    std::vector<bool> enumBool; // TODO: does this even make sense?
     bool constantBool;
     bool defaultBool;
     // only fill for type integer
@@ -304,6 +311,8 @@ private:
     /*std::vector<std::vector<auto>> enumArray;
     std::vector<auto> constantArray;
     std::vector<auto> defaultArray;*/
+    const char *constantAsCharArray;
+    const char *defaultAsCharArray;
     float minimum;
     float maximum;
     float exclusiveMinimum_number; // TODO: I don't get this
