@@ -9,6 +9,7 @@
 #include<vector>
 #include <cmath>
 #include <regex>
+#include <typeinfo>
 #include <nlohmann/json.hpp>
 
 enum jsonDataType
@@ -18,6 +19,7 @@ enum jsonDataType
     json_boolean,
     json_integer,
     json_array,
+    json_object,
     json_type_undef
 };
 enum jsonSchemaFormat
@@ -40,12 +42,14 @@ enum sdfSubtype
 class sdfCommon;
 class sdfThing;
 class sdfObject;
+class sdfProperty;
 
 std::string jsonDTypeToString(jsonDataType type);
 jsonDataType stringToJsonDType(std::string str);
 sdfCommon* refToCommon(std::string ref);
 std::string  correctValue(std::string val);
 
+#define INDENT_WIDTH 2
 
 // sdfObject, sdfProperty, sdfAction, sdfEvent and sdfData are sdfCommons
 class sdfCommon
@@ -53,6 +57,7 @@ class sdfCommon
 public:
     sdfCommon(std::string _label = "", std::string _description = "",
             sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {});
+    virtual ~sdfCommon();
     // getters
     std::string getDescription();
     const char* getDescriptionAsArray();
@@ -85,11 +90,12 @@ public:
     sdfObjectElement(std::string _label = "", std::string _description = "",
             sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {},
             sdfObject *_parentObject = NULL);
+    ~sdfObjectElement();
     sdfObject* getParentObject();
     void setParentObject(sdfObject *parentObject);
     std::string generateReferenceString();
 private:
-    sdfObject *parent;
+    sdfObject *parentObject;
 };
 
 class sdfInfoBlock
@@ -143,13 +149,16 @@ public:
             std::string _type,
             sdfCommon *_reference = NULL,
             std::vector<sdfCommon*> _required = {},
-            sdfCommon *_parentCommon = NULL);
+            sdfCommon *_parentCommon = NULL,
+            std::vector<sdfData*> _choice = {});
     sdfData(std::string _label,
             std::string _description,
             jsonDataType _type,
             sdfCommon *_reference = NULL,
             std::vector<sdfCommon*> _required = {},
-            sdfCommon *_parentCommon = NULL);
+            sdfCommon *_parentCommon = NULL,
+            std::vector<sdfData*> _choice = {});
+    ~sdfData();
     // Setters for member variables (different for types)
     // check which of the sdfData data qualities are designated for which
     // data type (number, string, ...)
@@ -157,8 +166,7 @@ public:
             float _default = NAN,
             float _min = NAN,
             float _max = NAN,
-            float _multipleOf = NAN,
-            std::vector<float> _enum = {});
+            float _multipleOf = NAN);
     // TODO: constant and default should not be set at the same time?
     void setStringData(std::string _constant = "",
                        std::string _default = "",
@@ -170,21 +178,18 @@ public:
     void setBoolData(bool _constant = false,
                      bool defineConst = false,
                      bool _default = false,
-                     bool defineDefault = false,
-                     std::vector<bool> _enum = {});
+                     bool defineDefault = false);
     void setIntData(int _constant = -1,
                     bool defineConst = false,
                     int _default = -1,
                     bool defineDefault = false,
                     float _min = NAN,
-                    float _max = NAN,
-                    std::vector<int> _enum = {});
-    void setArrayData(float _minItems,
-                      float _maxItems,
-                        bool _uniqueItems,
-                      std::string item_type,
-                      sdfCommon *ref = NULL);
-    void setArrayData(std::vector<std::string> enm,
+                    float _max = NAN);
+    void setArrayData(float _minItems = NAN,
+                      float _maxItems = NAN,
+                      bool _uniqueItems = NAN,
+                      sdfData *_itemConstr = NULL);
+    /*void setArrayData(std::vector<std::string> enm,
                       float _minItems = NAN,
                       float _maxItems = NAN,
                       bool _uniqueItems = NAN,
@@ -208,7 +213,7 @@ public:
                       std::string item_type = "integer",
                       sdfCommon *ref = NULL,
                       float min = NAN,
-                      float max = NAN);
+                      float max = NAN);*/
     // other setters
     void setSimpType(jsonDataType _type);
     void setType(std::string _type);
@@ -230,9 +235,26 @@ public:
     void setDefaultInt(int defaultInt);
     void setDefaultNumber(float defaultNumber);
     void setDefaultString(std::string defaultString);
+    void setConstantArray(std::vector<bool> constantArray);
+    void setDefaultArray(std::vector<bool> defaultArray);
+    void setConstantArray(std::vector<int> constantArray);
+    void setDefaultArray(std::vector<int> defaultArray);
+    void setConstantArray(std::vector<float> constantArray);
+    void setDefaultArray(std::vector<float> defaultArray);
     void setConstantArray(std::vector<std::string> constantArray);
     void setDefaultArray(std::vector<std::string> defaultArray);
+    void setConstantObject(sdfData *object);
+    void setDefaultObject(sdfData *object);
+    // Todo: constant and default needed for object-type? No?
+    //void setConstantArray(std::vector<sdfData*> constantArray);
+    //void setDefaultArray(std::vector<sdfData*> defaultArray);
+    void setItemConstr(sdfData* constr);
     void setParentCommon(sdfCommon *parentCommon);
+    void setChoice(std::vector<sdfData*> choices);
+    void addChoice(sdfData *choice);
+    void addObjectProperty(sdfData *property);
+    void setObjectProperties(std::vector<sdfData*> properties);
+    void addRequiredObjectProperty(std::string propertyName);
     // getters for member variables
     bool getReadable();
     bool getWritable();
@@ -242,16 +264,18 @@ public:
     int getConstantInt();
     float getConstantNumber();
     std::string getConstantString();
+    sdfData* getConstantObject() const;
     const char * getConstantAsCharArray();
     std::string getContentFormat();
     bool getDefaultBool();
     int getDefaultInt();
     float getDefaultNumber();
     std::string getDefaultString();
+    sdfData* getDefaultObject() const;
     const char * getDefaultAsCharArray();
-    std::vector<bool> getEnumBool();
-    std::vector<int> getEnumInt();
-    std::vector<float> getEnumNumber();
+    //std::vector<bool> getEnumBool();
+    //std::vector<int> getEnumInt();
+    //std::vector<float> getEnumNumber();
     std::vector<std::string> getEnumString();
     bool isExclusiveMaximumBool();
     float getExclusiveMaximumNumber();
@@ -274,9 +298,18 @@ public:
     bool getUniqueItems();
     std::string getUnits();
     const char* getUnitsAsArray() const;
-    std::vector<std::string> getConstantArray();
-    std::vector<std::string> getDefaultArray();
+    std::vector<bool> getConstantBoolArray() const;
+    std::vector<bool> getDefaultBoolArray() const;
+    std::vector<int> getConstantIntArray() const;
+    std::vector<int> getDefaultIntArray() const;
+    std::vector<float> getConstantNumberArray() const;
+    std::vector<float> getDefaultNumberArray() const;
+    std::vector<std::string> getConstantStringArray() const;
+    std::vector<std::string> getDefaultStringArray() const;
     sdfCommon* getParentCommon();
+    sdfData* getItemConstr() const;
+    std::vector<sdfData*> getChoice() const;
+    std::vector<sdfData*> getObjectProperties() const;
     // parsing
     std::string generateReferenceString();
     nlohmann::json dataToJson(nlohmann::json prefix);
@@ -289,7 +322,7 @@ private:
     //std::vector<jsonDataType> unionTypes;
     std::string derType;
     // only fill for type number
-    std::vector<float> enumNumber;
+    //std::vector<float> enumNumber;
     float constantNumber;
     float defaultNumber;
     // only fill for type string
@@ -297,17 +330,29 @@ private:
     std::string constantString;
     std::string defaultString;
     // only fill for type boolean
-    std::vector<bool> enumBool; // TODO: does this even make sense?
+    //std::vector<bool> enumBool; // TODO: does this even make sense?
     bool constantBool;
     bool defaultBool;
+    bool constBoolDefined;
+    bool defaultBoolDefined;
     // only fill for type integer
-    std::vector<int> enumInt;
+    //std::vector<int> enumInt;
     int constantInt;
     int defaultInt;
+    bool constIntDefined;
+    bool defaultIntDefined;
     // only fill for type array
     // TODO: find a way to represent not only string arrays as const/default
-    std::vector<std::string> constantArray;
-    std::vector<std::string> defaultArray;
+    std::vector<bool> constantBoolArray;
+    std::vector<bool> defaultBoolArray;
+    std::vector<int> constantIntArray;
+    std::vector<int> defaultIntArray;
+    std::vector<float> constantNumberArray;
+    std::vector<float> defaultNumberArray;
+    std::vector<std::string> constantStringArray;
+    std::vector<std::string> defaultStringArray;
+    sdfData *constantObject;
+    sdfData *defaultObject;
     /*std::vector<std::vector<auto>> enumArray;
     std::vector<auto> constantArray;
     std::vector<auto> defaultArray;*/
@@ -327,6 +372,7 @@ private:
     float minItems;
     float maxItems;
     bool uniqueItems;
+    bool uniqueItemsDefined;
     sdfData *item_constr;
     // SDF-defined data qualities
     std::string units;
@@ -336,9 +382,17 @@ private:
     bool writable;
     bool observable;
     bool nullable;
+    bool readableDefined;
+    bool writableDefined;
+    bool observableDefined;
+    bool nullableDefined;
     std::string contentFormat;
+    // TODO: rename sdfSubtype to sdfType?
     sdfSubtype subtype;
     sdfCommon *parent;
+    std::vector<sdfData*> objectProperties;
+    std::vector<std::string> requiredObjectProperties;
+    std::vector<sdfData*> sdfChoice;
 };
 
 class sdfEvent : virtual public sdfObjectElement
@@ -349,20 +403,21 @@ public:
             sdfCommon *_reference = NULL,
             std::vector<sdfCommon*> _required = {},
             sdfObject *_parentObject = NULL,
-            std::vector<sdfData*> _outputData = {},
+            sdfData* _outputData = NULL,
             std::vector<sdfData*> _datatypes = {});
+    virtual ~sdfEvent();
     // setters
-    void addOutputData(sdfData *outputData);
+    void setOutputData(sdfData *outputData);
     void addDatatype(sdfData *datatype);
     // getters
     std::vector<sdfData*> getDatatypes();
-    std::vector<sdfData*> getOutputData();
+    sdfData* getOutputData();
     // parsing
     std::string generateReferenceString();
     nlohmann::json eventToJson(nlohmann::json prefix);
     sdfEvent* jsonToEvent(nlohmann::json input);
 private:
-    std::vector<sdfData*> outputData;
+    sdfData *outputData;
     std::vector<sdfData*> datatypes;
 };
 
@@ -374,19 +429,20 @@ public:
             sdfCommon *_reference = NULL,
             std::vector<sdfCommon*> _required = {},
             sdfObject *_parentObject = NULL,
-            std::vector<sdfData*> _inputData = {},
+            sdfData* _inputData = NULL,
             std::vector<sdfData*> _requiredInputData = {},
-            std::vector<sdfData*> _outputData = {},
+            sdfData* _outputData = NULL,
             std::vector<sdfData*> _datatypes = {});
+    virtual ~sdfAction();
     // setters
-    void addInputData(sdfData* inputData);
+    void setInputData(sdfData* inputData);
     void addRequiredInputData(sdfData* requiredInputData);
-    void addOutputData(sdfData* outputData);
+    void setOutputData(sdfData* outputData);
     void addDatatype(sdfData *datatype);
     // getters
-    std::vector<sdfData*> getInputData();
+    sdfData* getInputData();
     std::vector<sdfData*> getRequiredInputData();
-    std::vector<sdfData*> getOutputData();
+    sdfData* getOutputData();
     std::vector<sdfData*> getDatatypes();
     // parsing
     std::string generateReferenceString();
@@ -394,9 +450,9 @@ public:
     sdfAction* jsonToAction(nlohmann::json input);
 
 private:
-    std::vector<sdfData*> inputData;
-    std::vector<sdfData*> requiredInputData;
-    std::vector<sdfData*> outputData;
+    sdfData *inputData;
+    std::vector<sdfData*> requiredInputData; // TODO: obsolete?
+    sdfData *outputData;
     std::vector<sdfData*> datatypes;
 };
 
@@ -409,6 +465,7 @@ public:
             sdfCommon *_reference = NULL,
             std::vector<sdfCommon*> _required = {},
              sdfObject *_parentObject = NULL);
+    sdfProperty(sdfData& data);
     // parsing
     std::string generateReferenceString();
     nlohmann::json propertyToJson(nlohmann::json prefix);
@@ -423,6 +480,7 @@ public:
             std::vector<sdfProperty*> _properties = {},
             std::vector<sdfAction*> _actions = {}, std::vector<sdfEvent*> _events = {},
             std::vector<sdfData*> _datatypes = {}, sdfThing *_parentThing = NULL);
+    virtual ~sdfObject();
     // setters
     void setInfo(sdfInfoBlock *_info);
     void setNamespace(sdfNamespaceSection *_ns);
@@ -466,6 +524,7 @@ public:
             sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {},
             std::vector<sdfThing*> _things = {}, std::vector<sdfObject*> _objects = {},
             sdfThing *_parentThing = NULL);
+    virtual ~sdfThing();
     // setters
     void setInfo(sdfInfoBlock *_info);
     void setNamespace(sdfNamespaceSection *_ns);
