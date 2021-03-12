@@ -3,9 +3,12 @@ json/
 libyang/
 playground/
 yang/
+cddl_validator/
+json-schema-validator/
 *.o
 *.sdf.json
 *.yang
 .cproject
 .project
 .settings/
+sdf-syntax.cddl

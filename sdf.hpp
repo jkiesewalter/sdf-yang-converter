@@ -11,6 +11,8 @@
 #include <regex>
 #include <typeinfo>
 #include <nlohmann/json.hpp>
+#include <nlohmann/json-schema.hpp>
+#include <libyang/libyang.h>
 
 enum jsonDataType
 {
@@ -48,6 +50,10 @@ std::string jsonDTypeToString(jsonDataType type);
 jsonDataType stringToJsonDType(std::string str);
 sdfCommon* refToCommon(std::string ref);
 std::string  correctValue(std::string val);
+bool validateJson(nlohmann::json sdf,
+        std::string schemaFileName = "sdf-validation.cddl");
+bool validateFile(std::string fileName,
+        std::string schemaFileName = "sdf-validation.cddl");
 
 #define INDENT_WIDTH 2
 
@@ -55,10 +61,12 @@ std::string  correctValue(std::string val);
 class sdfCommon
 {
 public:
-    sdfCommon(std::string _label = "", std::string _description = "",
+    sdfCommon(std::string _name = "", std::string _description = "",
             sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {});
     virtual ~sdfCommon();
     // getters
+    std::string getName() const;
+    const char* getNameAsArray() const;
     std::string getDescription();
     const char* getDescriptionAsArray();
     std::string getLabel();
@@ -67,6 +75,7 @@ public:
     std::vector<sdfCommon*> getRequired();
     //sdfCommon* getParentCommon();
     // setters
+    void setName(std::string _name);
     void setLabel(std::string _label);
     void setDescription(std::string dsc);
     void addRequired(sdfCommon *common);
@@ -77,6 +86,7 @@ public:
     nlohmann::json commonToJson(nlohmann::json prefix);
     void jsonToCommon(nlohmann::json input);
 private:
+    std::string name;
     std::string description;
     std::string label;
     sdfCommon *reference;
@@ -87,7 +97,7 @@ private:
 class sdfObjectElement : virtual public sdfCommon
 {
 public:
-    sdfObjectElement(std::string _label = "", std::string _description = "",
+    sdfObjectElement(std::string _name = "", std::string _description = "",
             sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {},
             sdfObject *_parentObject = NULL);
     ~sdfObjectElement();
@@ -144,20 +154,22 @@ class sdfData : virtual public sdfCommon
 {
 public:
     sdfData();
-    sdfData(std::string _label,
+    sdfData(std::string _name,
             std::string _description,
             std::string _type,
             sdfCommon *_reference = NULL,
             std::vector<sdfCommon*> _required = {},
             sdfCommon *_parentCommon = NULL,
             std::vector<sdfData*> _choice = {});
-    sdfData(std::string _label,
+    sdfData(std::string _name,
             std::string _description,
             jsonDataType _type,
             sdfCommon *_reference = NULL,
             std::vector<sdfCommon*> _required = {},
             sdfCommon *_parentCommon = NULL,
             std::vector<sdfData*> _choice = {});
+    sdfData(sdfData &data);
+    sdfData(sdfProperty &prop);
     ~sdfData();
     // Setters for member variables (different for types)
     // check which of the sdfData data qualities are designated for which
@@ -224,8 +236,13 @@ public:
     void setObserveNull(bool _observable, bool _nullable);
     void setFormat(jsonSchemaFormat _format);
     void setSubtype(sdfSubtype _subtype);
+    void setMinimum(float min);
+    void setMaximum(float max);
+    void setMultipleOf(float mult);
     void setMaxItems(float maxItems);
     void setMinItems(float minItems);
+    void setMinLength(float min);
+    void setMaxLength(float max);
     void setPattern(std::string pattern);
     void setConstantBool(bool constantBool);
     void setConstantInt(int constantInt);
@@ -245,6 +262,7 @@ public:
     void setDefaultArray(std::vector<std::string> defaultArray);
     void setConstantObject(sdfData *object);
     void setDefaultObject(sdfData *object);
+    void setEnumString(std::vector<std::string> enm);
     // Todo: constant and default needed for object-type? No?
     //void setConstantArray(std::vector<sdfData*> constantArray);
     //void setDefaultArray(std::vector<sdfData*> defaultArray);
@@ -260,6 +278,10 @@ public:
     bool getWritable();
     bool getNullable();
     bool getObservable();
+    bool getReadableDefined() const;
+    bool getWritableDefined() const;
+    bool getNullableDefined() const;
+    bool getObservableDefined() const;
     bool getConstantBool();
     int getConstantInt();
     float getConstantNumber();
@@ -273,6 +295,12 @@ public:
     std::string getDefaultString();
     sdfData* getDefaultObject() const;
     const char * getDefaultAsCharArray();
+    bool getDefaultDefined() const;
+    bool getConstantDefined() const;
+    bool getDefaultIntDefined() const;
+    bool getConstantIntDefined() const;
+    bool getDefaultBoolDefined() const;
+    bool getConstantBoolDefined() const;
     //std::vector<bool> getEnumBool();
     //std::vector<int> getEnumInt();
     //std::vector<float> getEnumNumber();
@@ -296,6 +324,7 @@ public:
     jsonDataType getSimpType();
     std::string getType();
     bool getUniqueItems();
+    bool getUniqueItemsDefined() const;
     std::string getUnits();
     const char* getUnitsAsArray() const;
     std::vector<bool> getConstantBoolArray() const;
@@ -306,11 +335,15 @@ public:
     std::vector<float> getDefaultNumberArray() const;
     std::vector<std::string> getConstantStringArray() const;
     std::vector<std::string> getDefaultStringArray() const;
-    sdfCommon* getParentCommon();
+    sdfCommon* getParentCommon() const;
     sdfData* getItemConstr() const;
+    bool isItemConstr() const;
     std::vector<sdfData*> getChoice() const;
     std::vector<sdfData*> getObjectProperties() const;
+    std::vector<std::string> getRequiredObjectProperties() const;
     // parsing
+    void parseDefault(const char *value);
+    void parseDefaultArray(lys_node_leaflist *node);
     std::string generateReferenceString();
     nlohmann::json dataToJson(nlohmann::json prefix);
     sdfData* jsonToData(nlohmann::json input);
@@ -360,7 +393,7 @@ private:
     const char *defaultAsCharArray;
     float minimum;
     float maximum;
-    float exclusiveMinimum_number; // TODO: I don't get this
+    float exclusiveMinimum_number; // TODO: number > exclusiveMin vs >=
     float exclusiveMaximum_number;
     bool exclusiveMinimum_bool;
     bool exclusiveMaximum_bool;
@@ -398,7 +431,7 @@ private:
 class sdfEvent : virtual public sdfObjectElement
 {
 public:
-    sdfEvent(std::string _label = "",
+    sdfEvent(std::string _name = "",
             std::string _description = "",
             sdfCommon *_reference = NULL,
             std::vector<sdfCommon*> _required = {},
@@ -424,7 +457,7 @@ private:
 class sdfAction : virtual public sdfObjectElement
 {
 public:
-    sdfAction(std::string _label = "",
+    sdfAction(std::string _name = "",
             std::string _description = "",
             sdfCommon *_reference = NULL,
             std::vector<sdfCommon*> _required = {},
@@ -459,7 +492,7 @@ private:
 class sdfProperty : public sdfData, virtual public sdfObjectElement
 {
 public:
-    sdfProperty(std::string _label = "",
+    sdfProperty(std::string _name = "",
             std::string _description = "",
             jsonDataType _type = {},
             sdfCommon *_reference = NULL,
@@ -475,7 +508,7 @@ public:
 class sdfObject : virtual public sdfCommon
 {
 public:
-    sdfObject(std::string _label = "", std::string _description = "",
+    sdfObject(std::string _name = "", std::string _description = "",
             sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {},
             std::vector<sdfProperty*> _properties = {},
             std::vector<sdfAction*> _actions = {}, std::vector<sdfEvent*> _events = {},
@@ -520,7 +553,7 @@ private:
 class sdfThing : virtual public sdfCommon
 {
 public:
-    sdfThing(std::string _label = "", std::string _description = "",
+    sdfThing(std::string _name = "", std::string _description = "",
             sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {},
             std::vector<sdfThing*> _things = {}, std::vector<sdfObject*> _objects = {},
             sdfThing *_parentThing = NULL);
