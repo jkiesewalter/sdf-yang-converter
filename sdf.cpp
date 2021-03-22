@@ -50,7 +50,7 @@ jsonDataType stringToJsonDType(string str)
         return json_boolean;
     else if (str == "integer" || str == "int"
             || str == "int8" || str == "uint8"
-            || str == "int16" || str == "unint16"
+            || str == "int16" || str == "uint16"
             || str == "int32" || str == "uint32"
             || str == "int64" || str == "uint64")
         return json_integer;
@@ -114,8 +114,15 @@ sdfCommon::sdfCommon(string _name, string _description, sdfCommon *_reference,
 
 sdfCommon::~sdfCommon()
 {
-    delete[] required.data();
-    delete reference;
+    // items in required cannot be deleted because they are deleted somewhere
+    // else as sdfData pointers already which are somehow not affected by the
+    // i = NULL command and then cause a segfault
+    for (sdfCommon *i : required)
+        i = NULL;
+    required.clear();
+
+    // reference cannot be deleted, see above explanation
+    reference = NULL;
 }
 
 void sdfCommon::setLabel(string _label)
@@ -204,7 +211,8 @@ sdfObjectElement::sdfObjectElement(string _name, string _description,
 
 sdfObjectElement::~sdfObjectElement()
 {
-    delete parentObject;
+    // if parentObject is deleted a loop is created
+    parentObject = NULL;
 }
 
 sdfObject* sdfObjectElement::getParentObject()
@@ -453,15 +461,28 @@ sdfData::sdfData(sdfProperty &prop)
 
 sdfData::~sdfData()
 {
-    delete[] objectProperties.data();
-    delete[] sdfChoice.data();
+    for (sdfData *i : objectProperties)
+    {
+        delete i;
+        i = NULL;
+    }
+    objectProperties.clear();
 
-    delete item_constr;
-    /*
     for (sdfData *i : sdfChoice)
     {
         delete i;
-    }*/
+        i = NULL;
+    }
+    sdfChoice.clear();
+
+    //delete[] objectProperties.data();
+    //delete[] sdfChoice.data();
+
+    delete item_constr;
+    item_constr = NULL;
+
+    // if parent was deleted a loop would be created
+    parent = NULL;
 }
 
 void sdfData::setNumberData(float _constant,
@@ -1108,10 +1129,20 @@ sdfEvent::sdfEvent(string _name, string _description, sdfCommon *_reference,
 {
     this->setParentObject(_parentObject);
 }
+
 sdfEvent::~sdfEvent()
 {
     delete outputData;
-    delete[] datatypes.data();
+    outputData = NULL;
+
+    for (sdfData *i : datatypes)
+    {
+        delete i;
+        i = NULL;
+    }
+    datatypes.clear();
+
+    //delete[] datatypes.data();
 }
 
 void sdfEvent::setOutputData(sdfData *outputData)
@@ -1210,9 +1241,27 @@ sdfAction::sdfAction(string _name, string _description, sdfCommon *_reference,
 sdfAction::~sdfAction()
 {
     delete inputData;
-    delete[] requiredInputData.data();
+    inputData = NULL;
+
+    for (sdfData *i : requiredInputData)
+    {
+        delete i;
+        i = NULL;
+    }
+    requiredInputData.clear();
+
+    for (sdfData *i : datatypes)
+    {
+        delete i;
+        i = NULL;
+    }
+    datatypes.clear();
+
     delete outputData;
-    delete[] datatypes.data();
+    outputData = NULL;
+
+    //delete[] requiredInputData.data();
+    //delete[] datatypes.data();
 }
 
 sdfData* sdfAction::getInputData()
@@ -1338,14 +1387,46 @@ sdfObject::sdfObject(string _name, string _description, sdfCommon *_reference,
 
 sdfObject::~sdfObject()
 {
-    delete[] properties.data();
+    for (sdfData *i : properties)
+    {
+        delete i;
+        i = NULL;
+    }
+    properties.clear();
+
+    for (sdfAction *i : actions)
+    {
+        delete i;
+        i = NULL;
+    }
+    actions.clear();
+
+    for (sdfEvent *i : events)
+    {
+        delete i;
+        i = NULL;
+    }
+    events.clear();
+
+    for (sdfData *i : datatypes)
+    {
+        delete i;
+        i = NULL;
+    }
+    datatypes.clear();
+
+    /*delete[] properties.data();
     delete[] actions.data();
     delete[] events.data();
-    delete[] datatypes.data();
+    delete[] datatypes.data();*/
 
     delete ns;
+    ns = NULL;
     delete info;
-    delete parent;
+    info = NULL;
+    // parent cannot be deleted here because that would cause a deletion loop
+    //delete parent;
+    parent = NULL;
 }
 
 void sdfObject::setInfo(sdfInfoBlock *_info)
@@ -1506,11 +1587,31 @@ sdfThing::sdfThing(string _name, string _description, sdfCommon *_reference,
 
 sdfThing::~sdfThing()
 {
-    delete[] childThings.data();
-    delete[] childObjects.data();
+    for (sdfThing *i : childThings)
+    {
+        delete i;
+        i = NULL;
+    }
+    childThings.clear();
+
+    for (sdfObject *i : childObjects)
+    {
+        delete i;
+        i = NULL;
+    }
+    childObjects.clear();
+
+    //delete[] childThings.data();
+    //delete[] childObjects.data();
+
     delete ns;
+    ns = NULL;
     delete info;
-    delete parent;
+    info = NULL;
+
+    // parent cannot be deleted because that would create a deletion loop
+    //delete parent;
+    parent = NULL;
 }
 
 void sdfThing::setInfo(sdfInfoBlock *_info)
@@ -1650,6 +1751,21 @@ sdfData* sdfData::jsonToData(json input)
         if (it.key() == "type" && !it.value().empty())
         {
             this->setType((string)input["type"]);
+            // if type is number, maybe the const and default values have to
+            // be reassigned
+            if (simpleType == json_number)
+            {
+                if (defaultIntDefined)
+                {
+                    defaultNumber = defaultInt;
+                    defaultIntDefined = false;
+                }
+                if (constIntDefined)
+                {
+                    constantNumber = constantInt;
+                    constIntDefined = false;
+                }
+            }
         }
         else if (it.key() == "enum" && !it.value().empty())
         {
@@ -1676,7 +1792,7 @@ sdfData* sdfData::jsonToData(json input)
                     ++jt)
             {
                 sdfData *choice = new sdfData();
-                choice->setLabel(correctValue(jt.key()));
+                choice->setName(correctValue(jt.key()));
                 this->addChoice(choice->jsonToData(jt.value()));
             }
         }
@@ -1698,7 +1814,7 @@ sdfData* sdfData::jsonToData(json input)
             {
                 //cout << jt.key() << endl;
                 sdfData *objectProperty = new sdfData();
-                objectProperty->setLabel(correctValue(jt.key()));
+                objectProperty->setName(correctValue(jt.key()));
                 this->addObjectProperty(objectProperty->jsonToData(jt.value()));
             }
         }
@@ -1725,7 +1841,9 @@ sdfData* sdfData::jsonToData(json input)
         else if (it.key() == "default" && !it.value().empty())
         {
             this->defaultDefined = true;
-            if (it.value().is_number_integer())
+            if (it.value().is_number_integer()
+                    && (simpleType == json_integer
+                            || simpleType == json_type_undef))
             {
                 this->defaultInt = it.value();
                 this->defaultIntDefined = true;
@@ -1991,7 +2109,7 @@ sdfObject* sdfObject::jsonToObject(json input)
             {
                 sdfData *childData = new sdfData();
                 this->addDatatype(childData);
-                childData->setLabel(correctValue(jt.key()));
+                childData->setName(correctValue(jt.key()));
                 childData->jsonToData(input["sdfData"][jt.key()]);
             }
         }
@@ -2001,7 +2119,7 @@ sdfObject* sdfObject::jsonToObject(json input)
             {
                 sdfProperty *childProperty = new sdfProperty();
                 this->addProperty(childProperty);
-                childProperty->setLabel(correctValue(jt.key()));
+                childProperty->setName(correctValue(jt.key()));
                 childProperty->jsonToProperty(input["sdfProperty"][jt.key()]);
 
                 //childProperty->setLabel("hi_oh");//jt.key());
@@ -2013,7 +2131,7 @@ sdfObject* sdfObject::jsonToObject(json input)
             {
                 sdfAction *childAction = new sdfAction();
                 this->addAction(childAction);
-                childAction->setLabel(correctValue(jt.key()));
+                childAction->setName(correctValue(jt.key()));
                 childAction->jsonToAction(input["sdfAction"][jt.key()]);
             }
         }
@@ -2025,7 +2143,7 @@ sdfObject* sdfObject::jsonToObject(json input)
                 this->addEvent(childEvent);
                 // TODO: with label set this way, a label will be printed
                 // even though there was just a "title" in the original
-                childEvent->setLabel(correctValue(jt.key()));
+                childEvent->setName(correctValue(jt.key()));
                 childEvent->jsonToEvent(input["sdfEvent"][jt.key()]);
             }
         }
@@ -2369,6 +2487,11 @@ std::map<const char*, const char*> sdfNamespaceSection::getNamespacesAsArrays()
     return output;
 }
 
+sdfNamespaceSection::~sdfNamespaceSection()
+{
+    namespaces.clear();
+}
+
 const char* sdfNamespaceSection::getDefaultNamespaceAsArray()
 {
     return this->default_ns.c_str();
@@ -2427,6 +2550,27 @@ const char* sdfData::getDefaultAsCharArray()
     {
         str = new std::string(std::to_string(defaultInt));
         defaultAsCharArray = str->c_str();
+    }
+    else if(simpleType == json_array)
+    {
+        // fill a vector with whatever default vector is defined
+        // (only one of them can be != {})
+        vector<string> strVec = defaultStringArray;
+        for (float i : defaultNumberArray)
+            strVec.push_back(to_string(i));
+        for (bool i : defaultBoolArray)
+        {
+            if (i == true)
+                strVec.push_back("true");
+            else
+                strVec.push_back("false");
+        }
+        for (int i : defaultIntArray)
+            strVec.push_back(to_string(i));
+        const char *result[strVec.size()];
+        for (int i = 0; i < strVec.size(); i++)
+            result[i] = strVec[i].c_str();
+        defaultAsCharArray = (const char*)result;
     }
 
     return defaultAsCharArray;
@@ -2619,6 +2763,8 @@ const char* sdfCommon::getNameAsArray() const
 {
     if (name != "")
         return name.c_str();
+    else
+        return label.c_str();
     return NULL;
 }
 

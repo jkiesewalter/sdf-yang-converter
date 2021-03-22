@@ -5,6 +5,8 @@
 #include <string>
 #include <regex>
 #include <math.h>
+#include <ctype.h>
+#include <algorithm>
 #include <libyang/libyang.h>
 #include <nlohmann/json.hpp>
 #include <nlohmann/json-schema.hpp>
@@ -42,7 +44,7 @@ struct lys_tpdf dec64Tpdf = {
         .type = {.base = LY_TYPE_DEC64}
 };
 struct lys_tpdf intTpdf = {
-        .name = "integer",
+        .name = "int64", // TODO: use another int type, e.g. int32?
         .type = {.base = LY_TYPE_INT64}
 };
 struct lys_tpdf booleanTpdf = {
@@ -52,7 +54,11 @@ struct lys_tpdf booleanTpdf = {
 struct lys_tpdf enumTpdf = {
         .name = "enumeration",
         .type = {.base = LY_TYPE_ENUM}
-    };
+};
+struct lys_tpdf leafrefTpdf = {
+        .name = "leafref",
+        .type = {.base = LY_TYPE_LEAFREF}
+};
 
 struct lys_node_container *tmp = new lys_node_container();
 
@@ -85,18 +91,30 @@ string avoidNull(const char *c)
  */
 string generatePath(lys_node *node)
 {
-    if (node->parent == NULL)
+    if (node == NULL)
+    {
+        cerr << "generatePath: node is null" << endl;
+        return "";
+    }
+    else if (node->parent == NULL)
         return "/" + avoidNull(node->name);
     return  generatePath(node->parent) + "/" + avoidNull(node->name);
 }
 
 /*
- * For a given leaf node that has the type leafref expand the path
+ * For a given leaf node that has the type leafref expand the target path
  * given by the leafref so that it does not contain ".." anymore
  * but specifies the full path
+ * It is not possible to simply call generatePath on the target in
+ * the node info because the target node is not always given
  */
 string expandPath(lys_node_leaf *node)
 {
+    if (node == NULL)
+    {
+        cerr << "expandPath: node is null" << endl;
+        return "";
+    }
     if (node->type.base != LY_TYPE_LEAFREF)
     {
         cerr << "expandPath(): node " + avoidNull(node->name)
@@ -358,28 +376,67 @@ string statusToDescription(uint16_t flags, string dsc)
     return dsc;
 }
 
+string mustToDescription(lys_restr *must, int size, string dsc)
+{
+    // TODO: test
+    string result = dsc;
+
+    for (int i = 0; i < size; i++)
+        result = result + "\n\n" + avoidNull(must[i].dsc)
+            + "\nmust (XPath expression): " + avoidNull(must[i].expr);
+
+    return result;
+}
+
+string whenToDescription(lys_when *when, string dsc)
+{
+    if (when)
+        return dsc + "\n\n" + avoidNull(when->dsc)
+                + "\nwhen (XPath expression): "
+                + avoidNull(when->cond);
+    return dsc;
+}
+
 /*
  *  Information from the given lys_type struct is translated
  *  and set accordingly in the given sdfData element
  */
 sdfData* typeToSdfData(struct lys_type *type, sdfData *data)
 {
+    // TODO: clean up this function
+    // TODO: type union, bits, empty?
+
     if (type->base == LY_TYPE_LEAFREF)
     {
+        // what if instead of using the path, the target node would be
+        // stored with the corresponding data element somehow?
         data->setType("");
-        referencesLeft.push_back(tuple<string, sdfCommon*>{
-           expandPath((lys_node_leaf*)type->parent), (sdfCommon*)data});
+        if (type->info.lref.target)
+        {
+            referencesLeft.push_back(tuple<string, sdfCommon*>{
+               generatePath((lys_node*)type->info.lref.target),
+                       (sdfCommon*)data});
+        }
+        else
+        {
+            referencesLeft.push_back(tuple<string, sdfCommon*>{
+                expandPath((lys_node_leaf*)type->parent), (sdfCommon*)data});
+        }
+    }
+    else if (strcmp(type->der->name, "empty") == 0)
+    {
+        data->setSimpType(json_boolean);
+        data->setConstantBool(true); // TODO: translate like this?
     }
     else if (stringToJsonDType(type->der->name) == json_type_undef
             && data->getSimpType() != json_array
-            && type->base != LY_TYPE_ENUM)
+            && type->base != LY_TYPE_ENUM && type->base != LY_TYPE_IDENT)
     {
         //data->setType(json_type_undef); // TODO: do this?
         typerefs.push_back(tuple<string, sdfCommon*>{
            type->der->name, data});
 
     }
-
     /*else? */if (type->base == LY_TYPE_IDENT)
     {
         if (type->info.ident.count > 1)
@@ -651,6 +708,10 @@ sdfProperty* leafToSdfProperty(struct lys_node_leaf *node,
     // translate the status of the leaf
     property->setDescription(statusToDescription(node->flags,
             property->getDescription()));
+
+    property->setDescription(mustToDescription(node->must, node->must_size,
+                property->getDescription()));
+
     //else
     //{
     typeToSdfData(&node->type, property);
@@ -663,7 +724,16 @@ sdfProperty* leafToSdfProperty(struct lys_node_leaf *node,
         property->setUnits(node->units);
 
     if (node->nodetype != LYS_LEAFLIST)
+    {
         property->parseDefault(node->dflt);
+        property->setDescription(whenToDescription(node->when,
+                property->getDescription()));
+        property->setDescription(
+                mustToDescription(
+                    ((lys_node_leaf*)node)->must,
+                    ((lys_node_leaf*)node)->must_size,
+                    property->getDescription()));
+    }
         //parseDefault(node->dflt, property);
 
     // TODO: keyword mandatory -> sdfRequired
@@ -678,14 +748,22 @@ sdfData* leafToSdfData(struct lys_node_leaf *node,
 
     if (node->type.base == LY_TYPE_LEAFREF)
     {
-        referencesLeft.push_back(tuple<string, sdfCommon*>{
-           expandPath(node), (sdfCommon*)data});
+        if (node->type.info.lref.target)
+            referencesLeft.push_back(tuple<string, sdfCommon*>{
+               generatePath((lys_node*)node->type.info.lref.target),
+                       (sdfCommon*)data});
+        else
+            referencesLeft.push_back(tuple<string, sdfCommon*>{
+               expandPath(node), (sdfCommon*)data});
         //cout<<"Leafref added "<<expandPath(node)<< endl;
     }
     // find what leafToSdfProperty returns in typerefs and overwrite with data
     else
     {
-        if (stringToJsonDType(node->type.der->name) == json_type_undef)
+        if (stringToJsonDType(node->type.der->name) == json_type_undef
+                && node->type.base != LY_TYPE_ENUM
+                && node->type.base != LY_TYPE_IDENT
+                && strcmp(node->type.der->name, "empty") != 0)
         {
             typerefs.push_back(tuple<string, sdfCommon*>{
                 node->type.der->name, data});
@@ -717,6 +795,15 @@ sdfProperty* leaflistToSdfProperty(struct lys_node_leaflist *node,
         cerr << "allocation failed" << endl;
         exit(EXIT_FAILURE);
     }
+
+    property->setDescription(whenToDescription(node->when,
+            property->getDescription()));
+    property->setDescription(
+            mustToDescription(
+                ((lys_node_leaflist*)node)->must,
+                ((lys_node_leaflist*)node)->must_size,
+                property->getDescription()));
+
     //property->setType("array");
     sdfData *itemConstr = leafToSdfData((lys_node_leaf*)node);
     // item constraints do not have a unit or a label
@@ -812,37 +899,6 @@ sdfAction* rpcToSdfAction(struct lys_node_rpc_action *node)
 }
 
 /*
- * The information is extracted from the given lys_node_notif struct and
- * a corresponding sdfEvent object is generated
- *//*
-sdfEvent* notificationToSdfEvent(struct lys_node_notif *node, sdfObject *object)
-{
-    // TODO: object needed as parameter?
-    sdfEvent *event = new sdfEvent(avoidNull(node->name),
-            avoidNull(node->dsc));
-    if (node->ref != NULL)
-        event->setDescription(event->getDescription()
-                + "\n\nReference:\n" + node->ref);
-    // convert typedefs into sdfData of the event
-    for (int i = 0; i < node->tpdf_size; i++)
-        event->addDatatype(typedefToSdfData(&node->tpdf[i]));
-
-    struct lys_node *start = node->child;
-    struct lys_node *elem;
-    LY_TREE_FOR(start, elem)
-    {
-        if (elem->nodetype == LYS_OUTPUT)
-        {
-            sdfData *output; // TODO?
-            event->setOutputData(nodeToSdfData(elem, object));
-        }
-    }
-
-    // TODO: must, if-feature
-    return event;
-}*/
-
-/*
  * The information is extracted from the given lys_node_container struct and
  * a corresponding sdfThing object is generated
  */
@@ -854,25 +910,8 @@ sdfThing* containerToSdfThing(struct lys_node_container *node)
 }
 
 /*
- * The information is extracted from the referenced lys_node_grp struct of the
- * 'uses' statement and a corresponding sdfData object is generated
- */
-/*sdfData* usesToSdfData(struct lys_node_uses *node, sdfObject *parent)
-{
-    sdfData *data = new sdfData(avoidNull(node->name),
-            avoidNull(node->dsc), json_object);
-
-    if (node->ref != NULL)
-        data->setDescription(data->getDescription()
-                + "\n\nReference:\n" + avoidNull(node->ref));
-
-
-    // TODO: if-feature, refine?, augment?, when
-    for (int i = 0; i < node->iffeature_size; i++);
-    return data;
-}*/
-
-/*
+ * The information is extracted from the given lys_node_rpc_action struct and
+ * a corresponding sdfAction object is generated
  * In case of an action node, data has to be given
  */
 sdfAction* actionToSdfAction(lys_node_rpc_action *node, sdfObject *object,
@@ -895,15 +934,6 @@ sdfAction* actionToSdfAction(lys_node_rpc_action *node, sdfObject *object,
     struct lys_node *elem;
     LY_TREE_FOR(start, elem)
     {
-        /*
-        if (elem->nodetype == LYS_INPUT)
-        {
-            action->setInputData(nodeToSdfData(elem, object));
-        }
-        else if (elem->nodetype == LYS_OUTPUT)
-        {
-            action->setOutputData(nodeToSdfData(elem, object));
-        }*/
         // A YANG action/rpc has at most 1 input
         if (elem->nodetype == LYS_INPUT && elem->flags != LYS_IMPLICIT)
         {
@@ -923,12 +953,25 @@ sdfAction* actionToSdfAction(lys_node_rpc_action *node, sdfObject *object,
                 input->addObjectProperty(inputPropsInlay);
                 // TODO: is the eliciting node->data required in the input?
                 input->addRequiredObjectProperty(inputPropsInlay->getName());
+
+                input->setDescription(
+                        mustToDescription(
+                            ((lys_node_inout*)node)->must,
+                            ((lys_node_inout*)node)->must_size,
+                            input->getDescription()));
+
                 action->setInputData(input);
             }
             // TODO: set name of inputProps to "" ?
             else
+            {
+                inputProps->setDescription(
+                        mustToDescription(
+                            ((lys_node_inout*)node)->must,
+                            ((lys_node_inout*)node)->must_size,
+                            inputProps->getDescription()));
                 action->setInputData(inputProps);
-                //input->setObjectProperties(inputProps->getObjectProperties());
+            }
 
             //action->setInputData(input);
         }
@@ -937,6 +980,11 @@ sdfAction* actionToSdfAction(lys_node_rpc_action *node, sdfObject *object,
         {
             sdfData* output = nodeToSdfData(elem, object);
             output->setName("");
+            output->setDescription(
+                    mustToDescription(
+                        ((lys_node_inout*)node)->must,
+                        ((lys_node_inout*)node)->must_size,
+                        output->getDescription()));
             /*
              * TODO: if the child node is an 'only child' should not it be
              * translated to object properties of the output but to output
@@ -979,6 +1027,15 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
     // TODO: if feature
     for (int i = 0; i < node->iffeature_size; i++);
 
+    // translate the when-statement (if applicable)
+    if (node->nodetype == LYS_CONTAINER || node->nodetype == LYS_CHOICE
+            || node->nodetype == LYS_ANYDATA || node->nodetype == LYS_CASE )
+    {
+        data->setDescription(
+                whenToDescription(((lys_node_container*)node)->when,
+                        data->getDescription()));
+    }
+
     // iterate over all child nodes
     struct lys_node *start = node->child;
     struct lys_node *elem;
@@ -1009,8 +1066,8 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
             data->addChoice(c);
             branchRefs[generatePath(elem)] = c;
 
-            //TODO: when, if-feature?
-            if (((lys_node_container*)elem)->when);
+            c->setDescription(whenToDescription(
+                    ((lys_node_case*)elem)->when, c->getDescription()));
         }
         if (elem->nodetype == LYS_CHOICE)
         {
@@ -1034,8 +1091,8 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
                     branchRefs[generatePath(((lys_node_choice*)elem)->dflt)]);
                 choiceData->setDefaultObject(dflt);
             }
-            //TODO: when, if-feature?
-            if (((lys_node_container*)elem)->when);
+            choiceData->setDescription(whenToDescription(
+                 ((lys_node_choice*)elem)->when, choiceData->getDescription()));
         }
         else if (elem->nodetype == LYS_CONTAINER)
         {
@@ -1043,11 +1100,16 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
                 object->addDatatype(typedefToSdfData(
                         &((lys_node_container*)elem)->tpdf[i]));
 
-            data->addObjectProperty(nodeToSdfData(elem, object));
+            sdfData *container = nodeToSdfData(elem, object);
+            container->setDescription(
+                    mustToDescription(
+                        ((lys_node_container*)elem)->must,
+                        ((lys_node_container*)elem)->must_size,
+                        container->getDescription()));
+            data->addObjectProperty(container);
 
-            // TODO: typedef, when, must, presence
-            for (int i = 0; i < ((lys_node_container*)elem)->must_size; i++);
-            if (((lys_node_container*)elem)->when);
+            // TODO: presence
+
             if (((lys_node_container*)elem)->presence);
         }
         else if (elem->nodetype == LYS_GROUPING)
@@ -1075,9 +1137,6 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
             data->addObjectProperty(next);
             //leafs[generatePath(elem)] = next;
 
-            // TODO: (min, max, units and default done?)
-            // TODO: must, when
-            if (((lys_node_leaflist*)elem)->when);
             for (int i = 0; i < ((lys_node_leaflist*)elem)->must_size; i++);
         }
         else if (elem->nodetype == LYS_LIST)
@@ -1088,6 +1147,13 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
             // translate the status of the list node
             next->setDescription(statusToDescription(elem->flags,
                     next->getDescription()));
+            next->setDescription(whenToDescription(
+                    ((lys_node_list*)elem)->when, next->getDescription()));
+            next->setDescription(
+                    mustToDescription(
+                        ((lys_node_list*)elem)->must,
+                        ((lys_node_list*)elem)->must_size,
+                        next->getDescription()));
 
             sdfData *itemConstr = nodeToSdfData(elem, object);
             itemConstr->setName("");
@@ -1104,7 +1170,7 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
 
             data->addObjectProperty(next);
 
-            // TODO: unique, keys, must, when
+            // TODO: unique, keys
         }
         else if (elem->nodetype == LYS_NOTIF)
         {
@@ -1114,6 +1180,12 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
             // translate the status of the notification
             event->setDescription(statusToDescription(elem->flags,
                     event->getDescription()));
+            // transfer the must statement to the description
+            event->setDescription(
+                    mustToDescription(
+                        ((lys_node_notif*)elem)->must,
+                        ((lys_node_notif*)elem)->must_size,
+                        event->getDescription()));
 
             sdfData *output = nodeToSdfData(elem, object);
             output->setName("");
@@ -1127,7 +1199,6 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
             for (int i = 0; i < ((lys_node_notif*)elem)->tpdf_size; i++)
                 object->addDatatype(typedefToSdfData(
                         &((lys_node_notif*)elem)->tpdf[i]));
-            //TODO: must, iffeature
         }
         else if (elem->nodetype == LYS_USES)
         {
@@ -1148,20 +1219,12 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
                 uses->setDescription(statusToDescription(elem->flags,
                         uses->getDescription()));
             }
-            /*// I don't think it is possible to translate augments and
-              // refines separately
-            for (int i = 0; i< ((lys_node_uses*)elem)->augment_size; i++)
-            {
-                lys_node *target = ((lys_node_uses*)elem)->augment[i].target;
-                branchRefs[generatePath(target)]
-            }*/
-
-            if (((lys_node_container*)elem)->when);
-                // TODO
+            uses->setDescription(whenToDescription(
+                    ((lys_node_uses*)elem)->when, uses->getDescription()));
 
             data->addObjectProperty(uses);
         }
-        // TODO: presence?, anydata, anyxml, status
+        // TODO: presence?, anydata, anyxml
     }
     // TODO: really add tpdfs to object or rather to last parent property etc?
     return data;
@@ -1509,8 +1572,8 @@ sdfObject* moduleToSdfObject(const struct lys_module *module)
         cerr << object->getName() << ": Unresolved references remaining"
         << endl;
 
-/*
-    string str;
+
+    /*string str;
     sdfCommon *com;
     cout << "leafrefs: " << endl;
     for (tuple<string, sdfCommon*> t : referencesLeft)
@@ -1523,8 +1586,8 @@ sdfObject* moduleToSdfObject(const struct lys_module *module)
     {
         tie(str, com) = t;
         cout << str << endl;
-    }
-*/
+    }*/
+
     return object;
 }
 
@@ -1587,47 +1650,14 @@ sdfThing* submoduleToSdfThing(struct lys_submodule *submodule)
 
 void fillLysType(sdfData *data, struct lys_type *type)
 {
-    /*
-    std::map<uint8_t, const char*> type_map
-    {
-        {LY_TYPE_BOOL, "boolean"},
-        {LY_TYPE_DEC64, "decimal64"},
-        {LY_TYPE_STRING, "string"},
-        {LY_TYPE_INT64, "int64"},
-    };
-    */
     type->base = stringToLType(data->getSimpType());
     if (!data->getEnumString().empty())
     {
         type->base = LY_TYPE_ENUM;
         type->der = &enumTpdf;
-        int enmSize = 0; // TODO: clean this up
-        static std::vector<std::string> enmNames;
-        /*if (!data->getEnumBool().empty())
-        {
-            std::vector<bool> bools = data->getEnumBool();
-            enmSize = bools.size();
-            enmNames.resize(enmSize);
-            for (int i = 0; i < enmSize; i++)
-            {
-                enmNames[i] = bools[i] ? "true" : "false";
-            }
-        }
-        // It is necessary to check whether the type is json_number because
-        // of the way enums are parsed into sdfData/sdfProperty members:
-        // integer enums will also fill the number enum
-        else if (!data->getEnumNumber().empty()
-                && data->getSimpType() == json_number)
-        {
-            std::vector<float> numbers = data->getEnumNumber();
-            enmSize = numbers.size();
-            enmNames.resize(enmSize);
-            for (int i = 0; i < enmSize; i++)
-            {
-                enmNames[i] = to_string(numbers[i]);
-            }
-            cout << "number"<<endl;
-        }*/
+        //int enmSize = 0; // TODO: clean this up
+        //static std::vector<std::string> enmNames;
+        /*
         if (!data->getEnumString().empty())
         {
             std::vector<std::string> strings = data->getEnumString();
@@ -1637,27 +1667,20 @@ void fillLysType(sdfData *data, struct lys_type *type)
             {
                 enmNames[i] = strings[i];
             }
-        }/*
-        else if (!data->getEnumInt().empty()
-                && data->getSimpType() == json_integer)
-        {
-            std::vector<int> ints = data->getEnumInt();
-            enmSize = ints.size();
-            enmNames.resize(enmSize);
-            for (int i = 0; i < enmSize; i++)
-            {
-                enmNames[i] = to_string(ints[i]);
-            }
-            cout << "integer"<<endl;
         }*/
+        int enmSize = data->getEnumString().size();
+        vector<string> enm = data->getEnumString();
         type->info.enums.count = enmSize;
-        static std::vector<lys_type_enum> enms(enmSize);
+        //static std::vector<lys_type_enum> enms(enmSize);
         for (int i = 0; i < enmSize; i++)
         {
-            enms[i].name = enmNames[i].c_str();
-            enms[i].value = i;
+            //type->info.enums.enm[i] = new lys_type_enum();
+            type->info.enums.enm[i].name = enm[i].c_str();
+            type->info.enums.enm[i].value = i;
+            //enms[i].name = enm[i].c_str();
+            //enms[i].value = i;
         }
-        type->info.enums.enm = enms.data();
+        //type->info.enums.enm = enms.data();
     }
     else if (type->base == LY_TYPE_BOOL)
     {
@@ -1705,10 +1728,66 @@ void fillLysType(sdfData *data, struct lys_type *type)
         //type->base = LY_TYPE_INT64;
         type->der = &intTpdf;
     }
+    else if (data->getReference())
+    {
+        sdfData *ref = dynamic_cast<sdfData*>(data->getReference());
+        // ifref is of type int, number, string, bool or array with items
+        // of said types
+        if (ref && ref->getSimpType() != json_object
+                && (ref->getSimpType() != json_array
+                        || ref->getItemConstr()->getSimpType() != json_object))
+        {
+            type->der = &leafrefTpdf;
+            type->info.lref.path = "test"; //TODO
+        }
+        // if ref is of type object or array with items of type object
+        else if (ref && (ref->getSimpType() == json_array
+                || ref->getSimpType() == json_object))
+        {
+            sdfProperty *propRef = dynamic_cast<sdfProperty*>
+                (data->getReference());
+            // if data references an sdfProperty
+            if (propRef)
+            {
+                // TODO: uses of grouping that has to be created
+                ((lys_node*)type->parent)->nodetype = LYS_USES;
+            }
+            else
+            {
+                // TODO: uses of existing grouping
+                ((lys_node*)type->parent)->nodetype = LYS_USES;
+            }
+        }
+        // if data references an sdfObject
+        else
+        {
+            // TODO
+        }
+    }
 }
-
-// TODO: choice, list (with arrays???), anydata, uses, case,
-// inout (?), augment
+/*
+void addNodeToTree(lys_node *node, lys_node *prev, lys_node *parent,
+        lys_module *module, bool first, bool last)
+{
+    // add the current node into the tree
+    if (node)
+    {
+        node->module = module;
+        node->parent = (lys_node*)&parent;
+        if (first)
+        {
+            node->prev = (lys_node*)node;
+            parent->child = (lys_node*)node;
+        }
+        else
+        {
+            if (!last)
+                prev->next = (lys_node*)node;
+            node->prev = (lys_node*)prev;
+        }
+        prev = (lys_node*)node;
+    }
+}*/
 
 struct lys_tpdf * sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
 {
@@ -1732,81 +1811,279 @@ struct lys_tpdf * sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
     tpdf->dflt = tmp;
     return tpdf;
 }
-
-void sdfPropertyToLeaf(sdfProperty *prop, lys_node_leaf *leaf)
+/*
+void sdfDataToList(sdfData *prop, lys_node_list *node)
 {
+    // for type array with items of type object?
+    if (prop->getSimpType() != json_array ||
+            (prop->getItemConstr()
+                    && prop->getItemConstr()->getSimpType() != json_object))
+        return;
+}
+
+lys_node_container* sdfDataToContainer(sdfData *data, lys_node_container *n)
+{
+    // for type object
+    if (data->getSimpType() != json_object)
+        return NULL;
+
+    lys_node_container *cont = new lys_node_container();
+    for (sdfData *prop : data->getObjectProperties())
+    {
+        lys_node_leaf *leaf = sdfDataToLeaf(prop);
+
+        addNodeToTree()
+    }
+    return cont;
+}
+
+void sdfDataToLeaflist(sdfData *prop, lys_node_leaflist *leaflist)
+{
+    if (prop->getSimpType() != json_array)
+        return;
+
+    leaflist->name = prop->getNameAsArray();
+    leaflist->dsc = prop->getDescriptionAsArray();
+    if (prop->getUnits() != "")
+        leaflist->units = prop->getUnitsAsArray(); // optional
+    leaflist->nodetype = LYS_LEAFLIST;
+
+    leaflist->dflt = (const char**)prop->getDefaultAsCharArray();
+    unsigned int min = 1;
+    //if (!isnan(prop->getMinItems()))
+    leaflist->min = prop->getMinItems();
+    //if (!isnan(prop->getMaxItems()))
+    leaflist->max = prop->getMaxItems();
+
+    fillLysType(prop->getItemConstr(), &leaflist->type);
+
+}
+
+void sdfDataToLeaf(sdfData *prop, lys_node_leaf *leaf)
+{
+    if (prop->getSimpType() == json_array || prop->getSimpType() == json_object)
+        return;
+
     leaf->name = prop->getNameAsArray();
     leaf->dsc = prop->getDescriptionAsArray();
     if (prop->getUnits() != "")
         leaf->units = prop->getUnitsAsArray(); // optional
+
     leaf->dflt = prop->getDefaultAsCharArray();
-    if (prop->getSimpType() == json_array)
+    leaf->nodetype = LYS_LEAF;
+    fillLysType(prop, &leaf->type);
+    leaf->type.parent = (lys_tpdf*)leaf;
+}*/
+
+void addNode(lys_node *child, lys_node *parent, lys_module *module)
+{
+    if (!parent || !child || !module)
     {
-        struct lys_node_leaflist *leaflist = (lys_node_leaflist*)leaf;
-        leaflist->nodetype = LYS_LEAFLIST;
+        cerr << "addNode: child or parent node or module must not be null"
+                << endl;
+        return;
+    }
+    child->parent = parent;
+    child->module = module;
 
-        //if (!isnan(prop->getMinItems()))
-            //leaflist->min = 1;// round(prop->getMinItems());
-        //if (!isnan(prop->getMaxItems()))
-            leaflist->max = 0;//prop->getMaxItems();
-
-        fillLysType(prop->getItemConstr(), &leaflist->type);
-
-        leaf = (lys_node_leaf*)leaflist;
+    if (!parent->child)
+    {
+        parent->child = child;
+        child->prev = child;
     }
     else
     {
-        leaf->nodetype = LYS_LEAF;
-        fillLysType(prop, &leaf->type);
-        leaf->type.parent = (lys_tpdf*)leaf;
+        lys_node *sibling = parent->child;
+        while (sibling->next)
+            sibling = sibling->next;
+        sibling->next = child;
+        child->prev = sibling;
     }
 }
 
-struct lys_module* sdfObjectToModule(sdfObject *object)
+lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module *module)
 {
-    // TODO: write blank yang file to use here and take context from input
-    const lys_module *buf_module = lys_parse_path(ly_ctx_new("./yang", 0),
+    //lys_node *node;
+    //cout << data->getType() << endl;
+    // type object
+    if (data->getSimpType() == json_object)
+    {
+        lys_node_container *cont = new lys_node_container();
+        cont->nodetype = LYS_CONTAINER;
+        vector<sdfData*> properties = data->getObjectProperties();
+        for (int i = 0; i < properties.size(); i++)
+        {
+            lys_node *prev;
+            lys_node *childNode;
+
+            sdfDataToNode(properties[i], childNode, module);
+
+            // add the current node into the tree
+            if (childNode)
+            {
+                childNode->module = module;
+                childNode->parent = node;
+                if (i == 0)
+                {
+                    childNode->prev = childNode;
+                    node->child = childNode;
+                }
+                else
+                {
+                    if (i < properties.size()-1)
+                        prev->next = childNode;
+                    childNode->prev = prev;
+                }
+                prev = childNode;
+            }
+        }
+        node = (lys_node*)cont;
+    }
+
+    // type array with objects of type object
+    else if (data->getSimpType() == json_array
+            && data->getItemConstr()
+               && data->getItemConstr()->getSimpType() == json_object)
+    {
+        lys_node_list *list = new lys_node_list();
+        sdfDataToNode(data->getItemConstr(), (lys_node*)list, module);
+        list->nodetype = LYS_LIST;
+        node = (lys_node*)list;
+    }
+
+    // type array with objects of type int, number, string or bool
+    else if (data->getSimpType() == json_array
+            && (!data->getItemConstr()
+               || data->getItemConstr()->getSimpType() != json_object))
+    {
+        lys_node_leaflist *leaflist = new lys_node_leaflist();
+        leaflist->nodetype = LYS_LEAFLIST;
+
+        fillLysType(data->getItemConstr(), &leaflist->type);
+        leaflist->type.parent = (lys_tpdf*)leaflist;
+        if (data->getUnits() != "")
+            leaflist->units = data->getUnitsAsArray(); // optional
+        leaflist->dflt = (const char**)data->getDefaultAsCharArray();
+        //if (!isnan(prop->getMinItems()))
+        leaflist->min = data->getMinItems();
+        //if (!isnan(prop->getMaxItems()))
+        leaflist->max = data->getMaxItems();
+
+        node = (lys_node*)leaflist;
+    }
+
+    // type int, number, string or bool
+    else if (data->getSimpType() != json_object
+            && data->getSimpType() != json_array)
+    {
+        lys_node_leaf *leaf = new lys_node_leaf();
+        leaf->nodetype = LYS_LEAF;
+
+        fillLysType(data, &leaf->type); // TODO: const?
+        leaf->type.parent = (lys_tpdf*)leaf;
+        if (data->getUnits() != "")
+            leaf->units = data->getUnitsAsArray();
+        leaf->dflt = data->getDefaultAsCharArray();
+
+        node = (lys_node*)leaf;
+    }
+
+    else
+        cerr << "This should not happen" << endl;
+
+    lys_node_choice *choice = new lys_node_choice();
+    for (sdfData *c : data->getChoice())
+    {
+        lys_node_case *cas = new lys_node_case();
+        lys_node *n = NULL;
+        n = sdfDataToNode(c, (lys_node*)n, module);
+        cas->nodetype = LYS_CASE;
+        cas->child = n;
+        node = (lys_node*)choice; //?
+    }
+
+    node->name = data->getNameAsArray();
+    node->dsc = data->getDescriptionAsArray();
+    return node;
+}
+
+
+struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
+{
+    /*const lys_module *buf_module = lys_parse_path(ly_ctx_new("./yang", 0),
                  "yang/standard/ietf/RFC/ietf-l2vpn-svc.yang", LYS_IN_YANG);
 
-    struct lys_module *module = const_cast<lys_module*>(buf_module);
+    struct lys_module *module = const_cast<lys_module*>(buf_module);*/
     //module->version = 0;
-    std::cout << module->tpdf[0].type.der->dsc << std::endl;
 
-    module->name = object->getInfo()->getTitleAsArray();
-    char *cat = new char[std::strlen(object->getInfo()->getTitleAsArray())
-                         + std::strlen(object->getDescriptionAsArray())
-                         + 1];
-    std::strcpy(cat, object->getInfo()->getTitleAsArray());
+    module.type = 0;
+    module.deviated = 0;
+    module.imp_size = 0;
+    module.inc_size = 0;
+    module.ident_size = 0;
+    module.features_size = 0;
+    module.augment_size = 0;
+    module.deviation_size = 0;
+    module.extensions_size = 0;
+    module.ext_size = 0;
+
+    // title has to be altered
+    string title = object.getInfo()->getTitle();
+    // All special characters (like '(') have to be removed from the title
+    title.resize(remove_if(title.begin(), title.end(),
+            [](char x){return !isalnum(x) && !isspace(x);})-title.begin());
+    // Spaces are replaced by '-'
+    replace(title.begin(), title.end(), ' ', '-');
+    // All characters in the title have to be lower case
+    for (int i = 0; i < title.length(); i++)
+        title[i] = tolower(title[i]);
+    string *titleP = new string(title);
+    module.name = titleP->c_str();
+
+    // copyright and license of SDF are put into the module's description
+    string *dsc = new string(object.getInfo()->getTitle()
+            + "\n\n" + object.getDescription()
+            + "\n\nCopyright: " + object.getInfo()->getCopyright()
+            + "\nLicense: " + object.getInfo()->getLicense());
+    /*
+    const char *cat(dsc.c_str());
+    std::strcpy(cat, object.getInfo()->getTitleAsArray());
     std::strcat(cat, "\n\n");
-    std::strcat(cat, object->getDescriptionAsArray());
+    std::strcat(cat, object.getDescriptionAsArray());
     std::strcat(cat, "\n\nCopyright: ");
-    std::strcat(cat, object->getInfo()->getCopyrightAsArray());
+    std::strcat(cat, object.getInfo()->getCopyrightAsArray());
     std::strcat(cat, "\nLicense: ");
-    std::strcat(cat, object->getInfo()->getLicenseAsArray());
-    std::strcat(cat, "\nVersion: ");
-    std::strcat(cat, object->getInfo()->getVersionAsArray());
-    module->dsc = cat;
-    module->prefix = object->getNamespace()->getNamespacesAsArrays().begin()
+    std::strcat(cat, object.getInfo()->getLicenseAsArray());
+    //std::strcat(cat, "\nVersion: ");
+    //std::strcat(cat, object.getInfo()->getVersionAsArray());
+    */
+    module.dsc = dsc->c_str();
+
+    //module.dsc = dsc.c_str();
+    module.prefix = object.getNamespace()->getNamespacesAsArrays().begin()
                                                                       ->first;
-    module->ns = object->getNamespace()->getNamespacesAsArrays().begin()
+    module.ns = object.getNamespace()->getNamespacesAsArrays().begin()
                                                                       ->second;
-    module->org = object->getInfo()->getCopyrightAsArray();
-    module->ref = "";
-    module->contact = "";
-    module->type = 0;
+    module.org = object.getInfo()->getCopyrightAsArray();
+    module.ref = "";
+    module.contact = "";
+    string version = object.getInfo()->getVersion();
+    module.rev = new lys_revision();
+    memcpy(module.rev[0].date, object.getInfo()->getVersionAsArray(), 10);
+    module.rev_size = 1;
 
     uint16_t cnt = 0;
-    module->tpdf = new lys_tpdf[object->getDatatypes().size()]();
-    if (module->tpdf == nullptr)
+    module.tpdf = new lys_tpdf[object.getDatatypes().size()]();
+    if (module.tpdf == nullptr)
         cerr << "Error: memory could not be allocated" << endl;
-    for (sdfData *i : object->getDatatypes())
+    for (sdfData *i : object.getDatatypes())
     {
-        sdfDataToTypedef(i, &module->tpdf[cnt]);
-        module->tpdf[cnt].module = module;
+        sdfDataToTypedef(i, &module.tpdf[cnt]);
+        module.tpdf[cnt].module = &module;
 
         cnt++;
     }
-    module->tpdf_size = cnt;
+    module.tpdf_size = cnt;
 
     static struct lys_node_container props = {
             .name = "properties",
@@ -1817,7 +2094,7 @@ struct lys_module* sdfObjectToModule(sdfObject *object)
             //.iffeature_size = 0,
             //.must_size = 0,
             //.tpdf_size = 0,
-            .module = module,
+            .module = &module,
             .nodetype = LYS_CONTAINER,
             //.parent = NULL,
             //.child = NULL,
@@ -1829,47 +2106,34 @@ struct lys_module* sdfObjectToModule(sdfObject *object)
             //.tpdf = NULL,
             //.presence = NULL
     };
-    module->data = (lys_node*)&props;
+    module.data = (lys_node*)&props;
 
-    std::vector<sdfProperty*> properties = object->getProperties();
-    static std::vector<lys_node_leaf> leafs(properties.size());
-    for (int i = 0; i < properties.size(); i++)//sdfProperty *i : object->getProperties())
-    {
-        sdfPropertyToLeaf(properties[i], &leafs[i]);
-        leafs[i].module = module;
-        leafs[i].parent = (lys_node*)&props;
-        if (i < properties.size()-1)
-            leafs[i].next = (lys_node*)&leafs[i+1];
-        if (i > 0)
-            leafs[i].prev = (lys_node*)&leafs[i-1];
-    }
-    leafs[0].prev = (lys_node*)&leafs[0];
-    props.child = (lys_node*)&leafs[0];
+    vector<sdfProperty*> properties = object.getProperties();
 
-    for (sdfAction *i : object->getActions())
+    //static vector<lys_node*> nodes(properties.size());
+    lys_node *prev;
+    lys_node *currentNode;
+    for (sdfProperty *i : object.getProperties())
     {
+        currentNode = NULL;//new lys_node();
+        currentNode = sdfDataToNode(i, currentNode, &module);
+        // add the current node into the tree
+        addNode(currentNode, (lys_node*)&props, &module);
+
 
     }
 
-    for (sdfEvent *i : object->getEvents())
+    for (sdfAction *i : object.getActions())
     {
 
     }
 
-    module->type = 0;
-    module->deviated = 0;
-    module->rev_size = 0;
-    module->imp_size = 0;
-    module->inc_size = 0;
-    module->ident_size = 0;
-    module->features_size = 0;
-    module->augment_size = 0;
-    module->deviation_size = 0;
-    module->extensions_size = 0;
-    module->ext_size = 0;
-    //module->data = new lys_node();
-    //module->data = NULL;
-    return module;
+    for (sdfEvent *i : object.getEvents())
+    {
+
+    }
+
+    return &module;
 }
 
 /*
@@ -1881,7 +2145,7 @@ struct lys_module* sdfThingToModule(sdfThing *thing)
     printf("in sdfThingToModule\n");
     module->version = 0;
     module->name = thing->getName().c_str();
-    std::cout << thing->getName().c_str() << std::endl;
+    //std::cout << thing->getName().c_str() << std::endl;
     module->dsc = "oh hi";//thing->getDescription().c_str();
     module->prefix = "ietf";
     module->ns = "stand";
@@ -1992,37 +2256,60 @@ int main(int argc, const char** argv)
     if (std::regex_match(argv[1], sdf_json_regex))
     {
         // check whether output file has right format
-        if (!std::regex_match(argv[2], yang_regex))
+        // -> only the name of the module is given in the input now
+        /*if (!std::regex_match(argv[2], yang_regex))
         {
             printf("Incorrect output file format\n");
             //return -1;
-        }
+        }*/
 
         // TODO: fill module
-        sdfObject *moduleObject = new sdfObject();
-        sdfThing *moduleThing = new sdfThing();
-        lys_module *module = new lys_module;
-        module->ctx = ly_ctx_new(argv[3], 0);
-        module = const_cast<lys_module*>(lys_parse_path(module->ctx,
-                        "yang/standard/ietf/RFC/ietf-l2vpn-svc.yang",
-                        LYS_IN_YANG));
-        if (moduleObject->fileToObject(argv[1]) != NULL)
+        sdfObject moduleObject;
+        sdfThing moduleThing;
+        //lys_module *module = new lys_module;
+        lys_module module = {};
+        //module->ctx = ly_ctx_new(argv[3], 0);
+        ly_ctx *ctx = ly_ctx_new(argv[3], 0);
+        //module = const_cast<lys_module*>(lys_parse_path(ctx,
+        //                "yang/standard/ietf/RFC/ietf-l2vpn-svc.yang",
+        //                LYS_IN_YANG));
+        if (moduleObject.fileToObject(argv[1]) != NULL)
         {
-            cout
+            //cout
             //<< removeQuotationMarksFromString(moduleObject->objectToString())
-            << moduleObject->objectToString()
-            << endl;
-            module = sdfObjectToModule(moduleObject);
+            //<< moduleObject->objectToString()
+            //<< endl;
+            sdfObjectToModule(moduleObject, module);
         }
         else
         {
-            moduleThing->fileToThing(argv[1]);
-            cout << moduleThing->thingToString() << endl;
-            module = sdfThingToModule(moduleThing);
+            moduleThing.fileToThing(argv[1]);
+            cout << moduleThing.thingToString() << endl;
+            //module = sdfThingToModule(moduleThing);
         }
-        const lys_module *const_module = const_cast<lys_module*>(module);
+
+        string tmpFileName;
+        if (argc == 4)
+        {
+            tmpFileName = argv[2];
+            tmpFileName = tmpFileName + ".yang";
+            module.name = argv[2];
+        }
+        else if (argc == 3)
+        {
+            tmpFileName = module.name;
+            tmpFileName = tmpFileName + ".yang";
+        }
+        const char *fileName = tmpFileName.c_str();
+
+        module.ctx = ctx;
+        const lys_module *const_module = const_cast<lys_module*>(&module);
         printf("Made it!\n");
-        lys_print_path(argv[2], const_module, LYS_OUT_YANG, NULL, 0, 0);
+
+        lys_print_path(fileName, const_module, LYS_OUT_YANG, NULL, 0, 0);
+
+        // validate the model
+        lys_parse_path(ctx, fileName, LYS_IN_YANG);
 
         return 0;
     }

@@ -3,10 +3,10 @@
 
 #include <iostream>
 #include <fstream>
-#include<sstream>
-#include<stdio.h>
-#include<string>
-#include<vector>
+#include <sstream>
+#include <stdio.h>
+#include <string>
+#include <vector>
 #include <cmath>
 #include <regex>
 #include <typeinfo>
@@ -137,6 +137,7 @@ class sdfNamespaceSection
 public:
     sdfNamespaceSection(std::map<std::string, std::string> _namespaces = {},
                         std::string _default_ns = "");
+    ~sdfNamespaceSection();
     // getters
     std::map<std::string, std::string> getNamespaces();
     std::map<const char*, const char*> getNamespacesAsArrays();
