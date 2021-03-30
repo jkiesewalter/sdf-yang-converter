@@ -276,6 +276,12 @@ json sdfInfoBlock::infoToJson(json prefix)
     return prefix;
 }
 
+sdfNamespaceSection::sdfNamespaceSection()
+{
+    namespaces = map<string, string>();
+    default_ns = "";
+}
+
 sdfNamespaceSection::sdfNamespaceSection(map<string, string> _namespaces,
         string _default_ns)
             : namespaces(_namespaces), default_ns(_default_ns)
@@ -2486,12 +2492,12 @@ std::map<const char*, const char*> sdfNamespaceSection::getNamespacesAsArrays()
     }
     return output;
 }
-
+/*
 sdfNamespaceSection::~sdfNamespaceSection()
 {
-    namespaces.clear();
+    //namespaces.clear();
 }
-
+*/
 const char* sdfNamespaceSection::getDefaultNamespaceAsArray()
 {
     return this->default_ns.c_str();
@@ -3022,4 +3028,75 @@ void sdfData::parseDefault(const char *value)
     if (this->getSimpType() == json_object)
         cerr << "parseDefault: called by default of object but"
                 "should only be used by leafs" << endl;
+}
+
+string sdfData::getDefaultAsString()
+{
+    if (!defaultDefined)
+        return "";
+
+    string defStr;
+    if (simpleType == json_number)
+    {
+        defStr = string(to_string(defaultNumber));
+    }
+    else if (simpleType == json_string && defaultString != "")
+    {
+        defStr = defaultString;
+    }
+
+    else if (simpleType == json_boolean)
+    {
+        if (defaultBool == true)
+            defStr = "true";
+        else
+            defStr = "false";
+    }
+    else if (simpleType == json_integer)
+    {
+        defStr = string(to_string(defaultInt));
+    }
+    else if(simpleType == json_array)
+    {
+        cerr << "getDefaultAsString: wrong function for default arrays" << endl;
+    }
+
+    return defStr;
+}
+
+string sdfData::getConstantAsString()
+{
+    if (!constDefined)
+        return "";
+
+    string constStr;
+    //if (simpleType == json_number)
+    if (!isnan(constantNumber))
+    {
+        constStr = to_string(constantNumber);
+    }
+    //else if (simpleType == json_string && constantString != "")
+    else if (constantString != "")
+        constStr = constantString;
+
+    //else if (simpleType == json_boolean)
+    else if (constBoolDefined)
+    {
+        if (constantBool == true)
+            constStr = "true";
+        else
+            constStr = "false";
+    }
+    //else if (simpleType == json_integer)
+    else if (constIntDefined)
+    {
+        constStr = to_string(constantInt);
+    }
+    else if(simpleType == json_array)
+    {
+        cerr << "getDefaultAsString: wrong function for constant arrays"
+                << endl;
+    }
+
+    return constStr;
 }

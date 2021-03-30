@@ -135,9 +135,10 @@ private:
 class sdfNamespaceSection
 {
 public:
-    sdfNamespaceSection(std::map<std::string, std::string> _namespaces = {},
+    sdfNamespaceSection();
+    sdfNamespaceSection(std::map<std::string, std::string> _namespaces,
                         std::string _default_ns = "");
-    ~sdfNamespaceSection();
+    //~sdfNamespaceSection();
     // getters
     std::map<std::string, std::string> getNamespaces();
     std::map<const char*, const char*> getNamespacesAsArrays();
@@ -288,6 +289,7 @@ public:
     float getConstantNumber();
     std::string getConstantString();
     sdfData* getConstantObject() const;
+    std::string getConstantAsString();
     const char * getConstantAsCharArray();
     std::string getContentFormat();
     bool getDefaultBool();
@@ -295,6 +297,7 @@ public:
     float getDefaultNumber();
     std::string getDefaultString();
     sdfData* getDefaultObject() const;
+    std::string getDefaultAsString();
     const char * getDefaultAsCharArray();
     bool getDefaultDefined() const;
     bool getConstantDefined() const;
