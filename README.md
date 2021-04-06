@@ -1,54 +1,75 @@
 # SDF-YANG-Converter
 
-* currently, only the direction YANG->SDF is (partly) implemented
-* run with './converter path/to/input/file path/to/output/file path/to/yang/repo', e.g. './converter yang/standard/ietf/RFC/ietf-l2vpn-svc.yang test.sdf.json ./yang' for conversion from yang to sdf (currently, only sdf.json is supported as file format for sdf)
-* a copy of the [YANG GitHub repository](https://github.com/YangModels/yang) is needed to load the context of a YANG file
+* Currently, the direction YANG->SDF is (roughly) finished, SDF->YANG is implemented in part
+* Run with './converter path/to/input/file \[path/to/output/file\] path/to/yang/repo', e.g. './converter yang/standard/ietf/RFC/ietf-l2vpn-svc.yang ./yang' for conversion from yang to sdf (currently, only sdf.json is supported as file format for sdf). If no output file name is given, the output file will be named after the input model
+* A copy of the [YANG GitHub repository](https://github.com/YangModels/yang) is needed to load the context of a YANG file
 * [libyang](https://github.com/CESNET/libyang) is needed to parse YANG files
 * [nlohmann/json](https://github.com/nlohmann/json) is needed to parse JSON files
-* compile with 'make' or 'g++ converter.cpp sdf.cpp -o converter -lyang'
+* [nlohmann/json-shema-validator](https://github.com/pboettch/json-schema-validator) is needed to validate resulting SDF JSON files with a JSON schema (in this case the validation schema from the [SDF Internet Draft](https://www.ietf.org/archive/id/draft-ietf-asdf-sdf-05.html) is used)
+* Compile with 'make'
 
 ## Direction YANG->SDF
 
-|YANG statements|translated to SDF|
-|-|-|
-|module|sdfThing|
-|submodule|sdfThing|
-|typedef|sdfObject "typedefs" with one sdfData element for each *typedef*; sdfRef where it is used|
-|type|type and other data qualities or sdfRef (for derived types) of sdfProperty or sdfData|
-|container|sdfThing|
-|leaf|sdfObject with one (if not all sibling nodes are leafs) or multiple (if all siblings are leafs) sdfProperties|
-|leaflist|sdfObject with one (if not all sibling nodes are leafs) or multiple (if all siblings are leafs) sdfProperties of type array|
-|list|???|
-|choice|tba|
+|YANG statement|translated to SDF|done?|problems/remarks|
+|-|-|-|-|
+|module|sdfOjbect|done||
+|submodule (included)|Integrated into sdfObject of super module|done|
+|submodule (on its own)|sdfObject|done|
+|typedef|One sdfData element for each *typedef*; sdfRef where it is used|done||
+|type (simple type)|type and maybe other data qualities|done|
+|type (derived type)|sdfRef to the corresponding sdfData element|done|
+|container (on top-level)|sdfProperty of type object\* (compound-type)|done||
+|container (__not__ on top-level)|property\* (type object\*) of the 'parent' of type object\* (compound-type)|done||
+|leaf (on top-level)|sdfProperty (type integer/number/boolean/string)|done|
+|leaf (__not__ on top-level)|property\* (type integer/number/boolean/string) of the 'parent' of type object\* (compound-type)|done|
+|leaflist (on top-level)|sdfProperty of type array|done||
+|leaflist (__not__ on top-level)|property\* (type array) of the 'parent' of type object\* (compound-type)|done||
+|list|sdfProperty of type object\* (compound-type)|done||
+|choice|sdfChoice|done|
+|case (belonging to choice)|Element of the sdfChoice|done|
+|grouping|sdfData of compound-type (type object\*) at the top level which can then be referenced|done|
+|uses|sdfRef to the sdfData corresponding to the referenced grouping|done|
+|rpc|sdfAction of the sdfObject corresponding to the rpc's module|done|
+|action|sdfAction of the sdfObject corresponding to the module the action occurs in|done|YANG actions belong to a specific container but containers are not always translated to sdfObjects. Only sdfObjects can have sdfActions, though. The affiliation of the action to the container can thus not always be represented in SDF as of now.|
+|notification|sdfEvent|done|
 |anydata|tba|
 |anyxml|tba|
-|grouping|sdfThing|
-|uses|tba|
-|rpc / action|sdfThing with sdfObject with sdfAction; inputs and outputs from YANG are translated to sdfData and added to the sdfAction as sdfRefs if they are leaf nodes; if inputs/outputs are not leaf nodes they are translated to sdfThings|
-|notification|sdfThing with sdfObject with sdfEvent|
-|augment|tba|
-|identity|sdfObject "identities" with one sdfData element for each *identity*; sdfRef where it is used|
-|extension|tba|
-|feature|tba|
-|if-feature|tba|
-|deviation|tba|
+|augment|augments are applied directly in libyang and thus do not need to be translated|done|
+|identity|One sdfData element for each identity; sdfRef where it is used|done||
+|extension|-|(done)|Extensions are used to extend the YANG syntax by a new statement. This can perhaps not be translated into SDF.|
+|feature / if-feature| The dependency is mentioned in the description of the element | done | if-feature is used to mark nodes as dependent on whether or not a feature is given. This cannot be tranlsated functionally as of now (?).|
+|deviation|Apply deviation directly and state that the model deviates from the standard in the description of the top-level element|||
 |config|tba|
-|status|tba|
-|description|description of the top-level sdfThing|
-|reference|tba|
-|when|tba|
+|status|Mentioned in the description|done|
+|reference|Mentioned in the description|done|
+|revisions|first revision is tranlated to version of SDF|done|Ignore the other revisions?|
+|import|Translate the module that the import references (elements can now be referenced by sdfRef)|done|
+|when/must|Mentioned in the description|(done)|JSON<->XPATH query language in progress|
+|||
+
+\* please note that *property* is not the same as sdfProperty and *type object* is not the same as sdfObject
 
 
 ## Direction SDF->YANG
 
-|SDF statement|translated to YANG|
-|-|-|
-|sdfProduct?||
-|sdfThing|module on highest level, container or grouping otherwise|
-|sdfObject|module on highest level, container or grouping otherwise|
-|sdfProperty|leaf; leaf-list for JSON type array|
-|sdfAction|rpc / action with leafs for each sdfData quality; leafref for each sdfInputData, sdfRequiredInputData and sdfOutputData|
-|sdfEvent|notification with leafs for each sdfData quality; leafref for each sdfOutputData|
-|sdfData|leaf; leaf-list for JSON type array; typedef?|
-|sdfRef|leafref / reference to typedef?|
-|||
+|SDF statement|translated to YANG|done?|problems/remarks|
+|-|-|-|-|
+|sdfProduct?|module on highest level, container otherwise|
+|sdfThing|module on highest level, container otherwise|
+|sdfObject|module on highest level, container otherwise|done||
+|sdfProperty (type integer/number/boolean/string)|leaf|done|
+|sdfProperty (type array with items of type integer/number/boolean/string)|leaf-list|done|
+|sdfProperty (type array with items of type object (compound-type))|list|done|
+|sdfProperty (type object (compound-type))|container|done|
+|sdfAction (of a sdfObject that is __not__ part of a sdfThing)|RPC|
+|sdfAction (of a sdfObject that __is__ part of a sdfThing)|action of corresponding container|
+|sdfEvent|notification|
+|sdfInputData/sdfOutputData|input/output translated like sdfProperty|
+|sdfData (type integer/number/boolean/string)|typedef|done|
+|sdfData (type array with items of type integer/number/boolean/string)|grouping with leaf-list|
+|sdfData (type array with items of type object (compound-type))|grouping  with list|
+|sdfData (type object (compound-type))|grouping with container|
+|sdfRef (to sdfData/sdfProperty of type integer/number/boolean/string or array with items of the aforementioned types)|leafref|
+|sdfRef (to sdfData of type array/object)|uses|
+|sdfRef (to sdfProperty of type object or type array with items of type object)|uses (create a grouping for the container that the sdfProperty was translated to)|
+|sdfChoice|choice with one case for each element of the sdfChoice; each element is translated like a sdfProperty|done|If the sdfChoice only contains different types it could also be translated to YANG type union (of those different types)|

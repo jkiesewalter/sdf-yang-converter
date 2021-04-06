@@ -1708,7 +1708,6 @@ void fillLysType(sdfData *data, struct lys_type *type)
     // if no type is given
     if (type->base == LY_TYPE_UNKNOWN)
     {
-        cout << "help" << endl;
         if (data->getDefaultIntDefined() || data->getConstantIntDefined())
             type->base = stringToLType(json_integer);
 
@@ -1780,12 +1779,10 @@ void fillLysType(sdfData *data, struct lys_type *type)
     }
     else if (type->base == LY_TYPE_BOOL)
     {
-        //type->base = LY_TYPE_BOOL;
         type->der = &booleanTpdf;
     }
-    else if (type->base == LY_TYPE_DEC64)
+    /*else if (type->base == LY_TYPE_DEC64)
     {
-        //type->base = LY_TYPE_DEC64;
         type->der = &dec64Tpdf;
         type->info.dec64.dig = 6;
         // TODO: decide number of fraction-digits
@@ -1803,10 +1800,9 @@ void fillLysType(sdfData *data, struct lys_type *type)
             type->info.dec64.range = storeRestriction(rangeRestr);
         }
 
-    }
+    }*/
     else if (type->base == LY_TYPE_STRING)
     {
-        type->base = LY_TYPE_STRING;
         type->der = &stringTpdf;
         const char *range = floatToRange(data->getMinLength(),
                 data->getMaxLength());
@@ -1836,39 +1832,88 @@ void fillLysType(sdfData *data, struct lys_type *type)
             delete[] type->info.str.patterns;
     }
 
-    else if (type->base == LY_TYPE_INT64)
+    else if (type->base == LY_TYPE_DEC64 || type->base == LY_TYPE_INT64)
     {
-        type->base = LY_TYPE_INT64;
-        type->der = &intTpdf;
-        const char *range = storeString(data->getConstantAsString());
-        if (!range) // TODO: take spaces out of range string in rangeToFloat
-            range = floatToRange(data->getMinimum(), data->getMaximum());
-        // This is not possible because multiple ranges have to be disjoint
-        // but a const value is typically within the given min-max range
-        else
+        //type->base = LY_TYPE_INT64;
+        const char *constRange = storeString(data->getConstantAsString());
+        // TODO: take spaces out of range string in rangeToFloat
+        const char *range = floatToRange(data->getMinimum(), data->getMaximum());
+
+        // if either a constant xor a min-max range is given
+        // put the num/dec64 range to whatever is given
+        if ((constRange && !range) || (!constRange && range))
         {
+            lys_restr rangeRestr = {};
+            if (constRange)
+                rangeRestr.expr = constRange;
+            else if (range)
+                rangeRestr.expr = range;
+
+            if (type->base == LY_TYPE_INT64)
+            {
+                type->der = &intTpdf;
+                type->info.num.range = storeRestriction(rangeRestr);
+            }
+            else
+            {
+                type->der = &dec64Tpdf;
+                type->info.dec64.range = storeRestriction(rangeRestr);
+                type->info.dec64.dig = 6;
+                // TODO: decide number of fraction-digits
+                // (std::to_string is always 6)
+                type->info.dec64.div = (int)data->getMultipleOf();
+            }
+        }
+        // if both a constant and a min-max range are given, create a union
+        else if (constRange && range)
+        {
+            lys_restr constRestr = {};
+            lys_restr rangeRestr = {};
+            constRestr.expr = constRange;
+            rangeRestr.expr = range;
+
+            type->info.uni.count = 2;
+            type->info.uni.types = (lys_type*)calloc(2, sizeof(lys_type));
+
+            if (type->base == LY_TYPE_INT64)
+            {
+                lys_type t =
+                {
+                        .base = LY_TYPE_INT64,
+                        .der = &intTpdf,
+                        .parent = type->parent,
+                };
+                t.info.num.range =
+                        storeRestriction(constRestr);
+                type->info.uni.types[0] = t;
+                t.info.num.range =
+                        storeRestriction(rangeRestr);
+                type->info.uni.types[1] = t;
+            }
+            else
+            {
+                lys_type t =
+                {
+                        .base = LY_TYPE_DEC64,
+                        .der = &dec64Tpdf,
+                        .parent = type->parent,
+                };
+                t.info.dec64.dig = 6;
+                // TODO: decide number of fraction-digits
+                // (std::to_string is always 6)
+                t.info.dec64.div = (int)data->getMultipleOf();
+
+                t.info.dec64.range =
+                        storeRestriction(constRestr);
+                type->info.uni.types[0] = t;
+                t.info.dec64.range =
+                        storeRestriction(rangeRestr);
+                type->info.uni.types[1] = t;
+            }
+
             type->base = LY_TYPE_UNION;
             type->der = &unionTpdf;
 
-            type->info.uni.count = 2;
-            type->info.uni.types = new lys_type[2]();
-
-            type->info.uni.types[0].base = LY_TYPE_INT64;
-            type->info.uni.types[0].der = &intTpdf;
-            type->info.uni.types[0].parent = type->parent;
-            lys_restr rangeRestr = {};
-            rangeRestr.expr = range;
-            type->info.uni.types[0].info.num.range =
-                    storeRestriction(rangeRestr);
-
-            range = floatToRange(data->getMinimum(), data->getMaximum());
-            type->info.uni.types[1].base = LY_TYPE_INT64;
-            type->info.uni.types[1].der = &intTpdf;
-            type->info.uni.types[1].parent = type->parent;
-            rangeRestr = {};
-            rangeRestr.expr = range;
-            type->info.uni.types[1].info.num.range =
-                    storeRestriction(rangeRestr);
             /*string tmp;
             tmp =  avoidNull(
                     floatToRange(data->getMinimum(), data->getMaximum()));
@@ -1880,13 +1925,21 @@ void fillLysType(sdfData *data, struct lys_type *type)
                 cout << tmp << endl;
             }*/
         }
-        if (range)
+        else
         {
-            lys_restr rangeRestr = {};
-            rangeRestr.expr = range;
-            type->info.num.range = storeRestriction(rangeRestr);
+            if (type->base == LY_TYPE_INT64)
+            {
+                type->der = &intTpdf;
+            }
+            else
+            {
+                type->der = &dec64Tpdf;
+                type->info.dec64.dig = 6;
+                // TODO: decide number of fraction-digits
+                // (std::to_string is always 6)
+                type->info.dec64.div = (int)data->getMultipleOf();
+            }
         }
-
     }
     else if (data->getReference())
     {
@@ -2049,7 +2102,6 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     {
         shared_ptr<lys_node_leaf> leaf =
                 shared_ptr<lys_node_leaf>(new lys_node_leaf());
-        //lys_node_leaf *leaf = new lys_node_leaf();
         leaf->nodetype = LYS_LEAF;
 
         leaf->type.parent = (lys_tpdf*)leaf.get();
@@ -2058,29 +2110,26 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
             leaf->units = data->getUnitsAsArray();
 
         leaf->dflt = storeString(data->getDefaultAsString());
-        //leaf->dflt = data->getDefaultAsCharArray();
 
         node = storeNode((shared_ptr<lys_node>&)leaf);
-        //nodeStore.push_back((shared_ptr<lys_node>&)leaf);
-        //node = nodeStore.back().get();
-        //node = (lys_node*)leaf;
     }
 
     else
         cerr << "This should not happen" << endl;
 
-    // TODO: if grouping, input, output, augment, notif, module, submodule
-    if (node->nodetype == LYS_CONTAINER || node->nodetype == LYS_LIST
-            || node->nodetype == LYS_CASE)
-    {
-        //lys_node_choice *choice = new lys_node_choice();
+    // TODO: choices can also be child nodes of grouping, input, output,
+    // augment, notif, module, submodule
+    /*if (node->parent->nodetype == LYS_CONTAINER
+            || node->parent->nodetype == LYS_LIST
+            || node->parent->nodetype == LYS_CASE)
+    */if(false){
         shared_ptr<lys_node_choice> choice =
-                shared_ptr<lys_node_choice>(new lys_node_choice());
+                //shared_ptr<lys_node_choice>(new lys_node_choice());
+                make_shared<lys_node_choice>((lys_node_choice&)*node);
         choice->nodetype = LYS_CHOICE;
         lys_node *n;
         for (sdfData *c : data->getChoice())
         {
-            cout << "choice! " << endl;
             shared_ptr<lys_node_case> caseP =
                     shared_ptr<lys_node_case>(new lys_node_case());
 
@@ -2093,6 +2142,8 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
             addNode((lys_node&)*caseP, (lys_node&)*choice, module);
             storeNode((shared_ptr<lys_node>&)caseP);
             node = storeNode((shared_ptr<lys_node>&)choice);
+            // TODO: take into consideration what is currently overwritten
+            // default etc.
         }
     }
 
@@ -2177,11 +2228,18 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
         //lys_tpdf *tpdf = new lys_tpdf();
         //tpdfStore.push_back(*tpdf);
         //module.tpdf = &tpdfStore.back();
-        sdfDataToTypedef(i, &module.tpdf[cnt]);
-        module.tpdf[cnt].module = &module;
+        if (i->getObjectProperties().empty())
+        {
+            sdfDataToTypedef(i, &module.tpdf[cnt]);
+            module.tpdf[cnt].module = &module;
+            cnt++;
+        }
+        else
+        {
+            // TODO: grouping
+        }
 
         //tpdf = NULL;
-        cnt++;
     }
     module.tpdf_size = cnt;
 
@@ -2370,6 +2428,7 @@ int main(int argc, const char** argv)
     // check whether input file is a SDF file
     if (std::regex_match(argv[1], sdf_json_regex))
     {
+        validateFile(argv[1]);
         // check whether output file has right format
         // -> only the name of the module is given in the input now
         /*if (!std::regex_match(argv[2], yang_regex))
@@ -2452,12 +2511,14 @@ int main(int argc, const char** argv)
         const char *fileName = tmpFileName.c_str();
 
         const lys_module *const_module = const_cast<lys_module*>(&module);
-        printf("Made it!\n");
+        printf("Conversion finished\n");
 
         lys_print_path(fileName, const_module, LYS_OUT_YANG, NULL, 0, 0);
+        printf("Printing to file finished\n");
 
         // validate the model
         lys_parse_path(ctx, fileName, LYS_IN_YANG);
+        printf("Validation finished\n");
 
         return 0;
     }
