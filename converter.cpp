@@ -2344,29 +2344,65 @@ struct lys_module* sdfThingToModule(sdfThing *thing)
 
 int main(int argc, const char** argv)
 {
-    if (argc < 3)
+    string usage = "Usage:\n"
+            + avoidNull(argv[0]) + " -f path/to/input/file "
+                    "[-o path/to/output/file] -c path/to/yang/directory";
+    if (argc < 2)//5 with identifiers?
     {
-        cerr << "missing input" << endl; // TODO
+        cerr << "Missing arguments\n" + usage << endl; // TODO
         return -1;
     }
     // regexs to check file formats
     std::regex yang_regex (".*\\.yang");
     std::regex sdf_json_regex (".*\\.sdf\\.json");
 
+    // Try loading the context from this directory with the usual name
+    ly_ctx *ctx = ly_ctx_new("./yang", 0);
+    const char *inputFileName = NULL;
+    const char *outputFileName = NULL;
+    for (int i = 0; i < argc; i++)
+    {
+        if (strcmp(argv[i], "-c") == 0)
+            // load the required context
+            ctx = ly_ctx_new(argv[i+1], 0);
+
+        else if (strcmp(argv[i], "-f") == 0)
+            inputFileName = argv[i+1];
+
+        else if (strcmp(argv[i], "-o") == 0)
+            outputFileName = argv[i+1];
+
+        // TODO: a directory to write the output to should be specifiable
+    }
+    if (!ctx)
+    {
+        cerr << "Loading YANG context failed" << endl;
+        return -1;
+    }
+    if (!inputFileName)
+    {
+        cerr << "No input file name specified\n" + usage << endl;
+        return -1;
+    }
+
     // check whether input file is a YANG file
-    if (std::regex_match(argv[1], yang_regex))
+    //if (std::regex_match(argv[1], yang_regex))
+    if (std::regex_match(inputFileName, yang_regex))
     {
         // TODO: check whether output file has right format
-        if (argc > 3 && !std::regex_match(argv[2], sdf_json_regex))
+        //if (argc > 3 && !std::regex_match(argv[2], sdf_json_regex))
+        if (outputFileName && !std::regex_match(outputFileName, sdf_json_regex))
         {
             cerr << "Incorrect output file format\n" << endl;
             //return -1;
         }
 
         // load the required context
-        ly_ctx *ctx = ly_ctx_new(argv[3], 0);
+        //ly_ctx *ctx = ly_ctx_new(argv[3], 0);
         // load the module
-        const lys_module *module = lys_parse_path(ctx, argv[1], LYS_IN_YANG);
+        //const lys_module *module = lys_parse_path(ctx, argv[1], LYS_IN_YANG);
+        const lys_module *module =
+                lys_parse_path(ctx, inputFileName, LYS_IN_YANG);
         //lys_print_path("test123.yang", module, LYS_OUT_YANG, "", 0, 0);
 
         if (module == NULL)
@@ -2390,13 +2426,15 @@ int main(int argc, const char** argv)
         else*/
         sdfObject *moduleObject = moduleToSdfObject(module);
         cout << "Module storing successful" << endl;
-        string outputFileName;
-        if (argc == 4)
-            outputFileName = argv[2];
+        string outputFileString;
+        //if (argc == 4)
+        //    outputFileName = argv[2];
+        if (outputFileName)
+            outputFileString = outputFileName;
         else
-            outputFileName = avoidNull(module->name) + ".sdf.json";
+            outputFileString = avoidNull(module->name) + ".sdf.json";
 
-        moduleObject->objectToFile(outputFileName);
+        moduleObject->objectToFile(outputFileString);
         cout << "Conversion finished" << endl;
 
         /*//TEST
@@ -2426,9 +2464,15 @@ int main(int argc, const char** argv)
     }
 
     // check whether input file is a SDF file
-    if (std::regex_match(argv[1], sdf_json_regex))
+    //if (std::regex_match(argv[1], sdf_json_regex))
+    if (std::regex_match(inputFileName, sdf_json_regex))
     {
-        validateFile(argv[1]);
+        if (outputFileName && !std::regex_match(outputFileName, yang_regex))
+        {
+            cerr << "Incorrect output file format\n" << endl;
+            //return -1;
+        }
+        validateFile(inputFileName);
         // check whether output file has right format
         // -> only the name of the module is given in the input now
         /*if (!std::regex_match(argv[2], yang_regex))
@@ -2464,12 +2508,13 @@ int main(int argc, const char** argv)
                 .data = &dataInit,
         };
         //module->ctx = ly_ctx_new(argv[3], 0);
-        ly_ctx *ctx = ly_ctx_new(argv[3], 0);
+        //ly_ctx *ctx = ly_ctx_new(argv[3], 0);
         module.ctx = ctx;
         //module = const_cast<lys_module*>(lys_parse_path(ctx,
         //                "yang/standard/ietf/RFC/ietf-l2vpn-svc.yang",
         //                LYS_IN_YANG));
-        if (moduleObject.fileToObject(argv[1]) != NULL)
+        //if (moduleObject.fileToObject(argv[1]) != NULL)
+        if (moduleObject.fileToObject(inputFileName) != NULL)
         {
             //cout
             //<< removeQuotationMarksFromString(moduleObject->objectToString())
@@ -2496,28 +2541,35 @@ int main(int argc, const char** argv)
             //module = sdfThingToModule(moduleThing);
         }
 
-        string tmpFileName;
-        if (argc == 4)
+        string outputFileString;
+        //if (argc == 4)
+        if (outputFileName)
         {
-            tmpFileName = argv[2];
-            tmpFileName = tmpFileName + ".yang";
-            module.name = argv[2];
+            //tmpFileName = argv[2];
+            //tmpFileName = outputFileName;
+            //tmpFileName = tmpFileName + ".yang";
+            cmatch cm;
+            regex r("(.*)\\.yang");
+            regex_match(outputFileName, cm, r);
+            //module.name = argv[2];
+            module.name = cm[1].str().c_str();
         }
-        else if (argc == 3)
+        else// if (argc == 3)
         {
-            tmpFileName = module.name;
-            tmpFileName = tmpFileName + ".yang";
+            outputFileString = module.name;
+            outputFileString = outputFileString + ".yang";
+            outputFileName = outputFileString.c_str();
         }
-        const char *fileName = tmpFileName.c_str();
+        //const char *fileName = tmpFileName.c_str();
 
         const lys_module *const_module = const_cast<lys_module*>(&module);
         printf("Conversion finished\n");
 
-        lys_print_path(fileName, const_module, LYS_OUT_YANG, NULL, 0, 0);
+        lys_print_path(outputFileName, const_module, LYS_OUT_YANG, NULL, 0, 0);
         printf("Printing to file finished\n");
 
         // validate the model
-        lys_parse_path(ctx, fileName, LYS_IN_YANG);
+        lys_parse_path(ctx, outputFileName, LYS_IN_YANG);
         printf("Validation finished\n");
 
         return 0;

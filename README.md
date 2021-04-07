@@ -1,14 +1,15 @@
 # SDF-YANG-Converter
 
-* Currently, the direction YANG->SDF is (roughly) finished, SDF->YANG is implemented in part
-* Run with './converter path/to/input/file \[path/to/output/file\] path/to/yang/repo', e.g. './converter yang/standard/ietf/RFC/ietf-l2vpn-svc.yang ./yang' for conversion from yang to sdf (currently, only sdf.json is supported as file format for sdf). If no output file name is given, the output file will be named after the input model
-* A copy of the [YANG GitHub repository](https://github.com/YangModels/yang) is needed to load the context of a YANG file
+This converter is work in progress. Currently, the direction YANG->SDF is (roughly) finished, SDF->YANG is implemented in part. For details please refer to the tables below.
+
+* To compile the code a copy of the [YANG GitHub repository](https://github.com/YangModels/yang) is needed to load the context of a YANG file
 * [libyang](https://github.com/CESNET/libyang) is needed to parse YANG files
 * [nlohmann/json](https://github.com/nlohmann/json) is needed to parse JSON files
 * [nlohmann/json-shema-validator](https://github.com/pboettch/json-schema-validator) is needed to validate resulting SDF JSON files with a JSON schema (in this case the validation schema from the [SDF Internet Draft](https://www.ietf.org/archive/id/draft-ietf-asdf-sdf-05.html) is used)
-* Compile with 'make'
+* Compile with `<make>`
+* Run with `<./converter -f path/to/input/file \[- o path/to/output/file\] -c path/to/yang/repo>`, e.g. `<./converter -f yang/standard/ietf/RFC/ietf-l2vpn-svc.yang -c ./yang`> for conversion from yang to sdf (only .sdf.json is supported as file format for SDF). If no output file name is provided, the output file will be named after the input model.
 
-## Direction YANG->SDF
+## Conversion table YANG->SDF
 
 |YANG statement|translated to SDF|done?|problems/remarks|
 |-|-|-|-|
@@ -50,7 +51,7 @@
 \* please note that *property* is not the same as sdfProperty and *type object* is not the same as sdfObject
 
 
-## Direction SDF->YANG
+## Conversion table SDF->YANG
 
 |SDF statement|translated to YANG|done?|problems/remarks|
 |-|-|-|-|
