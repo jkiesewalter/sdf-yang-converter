@@ -2031,6 +2031,27 @@ void addNode(lys_node &child, lys_node &parent, lys_module &module)
     }
 }
 
+void addNode(lys_node &child, lys_module &module)
+{
+    child.parent = NULL;
+    child.module = &module;
+
+    if (!module.data)
+    {
+        module.data = &child;
+        child.prev = &child;
+    }
+    else
+    {
+        lys_node *sibling = module.data;
+        while (sibling->next)
+            sibling = sibling->next;
+        sibling->next = &child;
+        child.prev = sibling;
+    }
+}
+
+
 lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
 {
     // type object
@@ -2155,12 +2176,6 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
 
 struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 {
-    /*const lys_module *buf_module = lys_parse_path(ly_ctx_new("./yang", 0),
-                 "yang/standard/ietf/RFC/ietf-l2vpn-svc.yang", LYS_IN_YANG);
-
-    struct lys_module *module = const_cast<lys_module*>(buf_module);*/
-    //module->version = 0;
-
     module.type = 0;
     module.deviated = 0;
     module.imp_size = 0;
@@ -2183,8 +2198,6 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     for (int i = 0; i < title.length(); i++)
         title[i] = tolower(title[i]);
     module.name = storeString(title);
-    //stringStore.push_back(title);
-    //module.name = stringStore.back().c_str();//titleP->c_str()
 
     // copyright and license of SDF are put into the module's description
     string dsc = object.getInfo()->getTitle()
@@ -2193,10 +2206,7 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
             + "\nLicense: " + object.getInfo()->getLicense();
 
     module.dsc = storeString(dsc);
-    //stringStore.push_back(dsc);
-    //module.dsc = stringStore.back().c_str();
 
-    //module.dsc = dsc.c_str();
     module.prefix = object.getNamespace()->getNamespacesAsArrays().begin()
                                                                       ->first;
     module.ns = object.getNamespace()->getNamespacesAsArrays().begin()
@@ -2204,7 +2214,6 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     module.org = object.getInfo()->getCopyrightAsArray();
     module.ref = "";
     module.contact = "";
-    //stringStore.push_back(object.getInfo()->getVersion());
     lys_revision *rev = new lys_revision();
     revStore.push_back(*rev);
     delete rev;
@@ -2214,38 +2223,36 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     module.rev_size = 1;
 
     uint16_t cnt = 0;
-    //lys_tpdf tpdfArr[object.getDatatypes().size()];
-    //module.tpdf = tpdfArr;
     module.tpdf = new lys_tpdf[object.getDatatypes().size()]();
     //if (module.tpdf == nullptr)
     //    cerr << "Error: memory could not be allocated" << endl;
     for (sdfData *i : object.getDatatypes())
     {
-        /*lys_tpdf tpdf = {
-              .name = "",
-              .module = &module
-        };*/
-        //lys_tpdf *tpdf = new lys_tpdf();
-        //tpdfStore.push_back(*tpdf);
-        //module.tpdf = &tpdfStore.back();
-        if (i->getObjectProperties().empty())
+        if (i->getObjectProperties().empty() && !i->getItemConstr())
         {
             sdfDataToTypedef(i, &module.tpdf[cnt]);
             module.tpdf[cnt].module = &module;
             cnt++;
         }
+        // else create a grouping
         else
         {
-            // TODO: grouping
+            shared_ptr<lys_node_grp> grp =
+                    shared_ptr<lys_node_grp>(new lys_node_grp());
+            grp->nodetype = LYS_GROUPING;
+            grp->name = i->getNameAsArray();
+            grp->module = &module;
+            grp->prev = (lys_node*)grp.get();
+            lys_node *child  = sdfDataToNode(i, child, module);
+            addNode(*child, (lys_node&)*grp, module);
+            addNode(*storeNode((shared_ptr<lys_node>&)grp), module);
         }
-
-        //tpdf = NULL;
     }
     module.tpdf_size = cnt;
 
-    /*static*/lys_node_container props = {
+    lys_node_container props = {
             .name = "properties",
-            .dsc = "",
+            .dsc = "The translated sdfProperties",
             //.ref = NULL,
             //.flags = 0,
             //.ext_size = 0,
@@ -2264,36 +2271,18 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
             //.tpdf = NULL,
             //.presence = NULL
     };
-    shared_ptr<lys_node_container> tmpShared =
+    shared_ptr<lys_node_container> propsCont =
             make_shared<lys_node_container>(props);
-    shared_ptr<lys_node> check((shared_ptr<lys_node>&)tmpShared);
-    if (check)
-        module.data = storeNode(check);
-    else
-    {
-        cerr << "sdfObjectToModule: shared pointer failed" << endl;
-        return NULL;
-    }
-
-    //shared_ptr<lys_node> propsP = make_shared<lys_node>((lys_node&)props);
-    //nodeStore.push_back(propsP);
-    //module.data = nodeStore.back().get();
-
-    //nodeStore.push_back((lys_node*)&props);
-    //module.data = nodeStore.back();
-    //module.data = (lys_node*)&props;
+    addNode(*storeNode((shared_ptr<lys_node>&)propsCont), module);
 
     vector<sdfProperty*> properties = object.getProperties();
-
-    //static vector<lys_node*> nodes(properties.size());
     lys_node *currentNode;
     for (sdfProperty *i : object.getProperties())
     {
         currentNode = NULL;//new lys_node();
         currentNode = sdfDataToNode(i, currentNode, module);
         // add the current node into the tree
-        addNode(*currentNode, *module.data, module);
-        //addNode(currentNode, nodeStore.back(), &module);
+        addNode(*currentNode, (lys_node&)*propsCont, module);
     }
 
     for (sdfAction *i : object.getActions())
@@ -2363,8 +2352,11 @@ int main(int argc, const char** argv)
     for (int i = 0; i < argc; i++)
     {
         if (strcmp(argv[i], "-c") == 0)
+        {
             // load the required context
+            ly_ctx_destroy(ctx, NULL);
             ctx = ly_ctx_new(argv[i+1], 0);
+        }
 
         else if (strcmp(argv[i], "-f") == 0)
             inputFileName = argv[i+1];
@@ -2460,12 +2452,14 @@ int main(int argc, const char** argv)
 
         test.objectToFile(argv[2]);*/
 
+        ly_ctx_destroy(ctx, NULL);
+        cout << "DONE" << endl;
         return 0;
     }
 
     // check whether input file is a SDF file
     //if (std::regex_match(argv[1], sdf_json_regex))
-    if (std::regex_match(inputFileName, sdf_json_regex))
+    else if (std::regex_match(inputFileName, sdf_json_regex))
     {
         if (outputFileName && !std::regex_match(outputFileName, yang_regex))
         {
@@ -2505,7 +2499,7 @@ int main(int argc, const char** argv)
         lys_module module = {
                 //.rev = revInit,
                 .tpdf = tpdfInit,
-                .data = &dataInit,
+                //.data = &dataInit,
         };
         //module->ctx = ly_ctx_new(argv[3], 0);
         //ly_ctx *ctx = ly_ctx_new(argv[3], 0);
@@ -2566,12 +2560,15 @@ int main(int argc, const char** argv)
         printf("Conversion finished\n");
 
         lys_print_path(outputFileName, const_module, LYS_OUT_YANG, NULL, 0, 0);
-        printf("Printing to file finished\n");
+        cout << "Printing to file " << outputFileString << " finished"
+                << endl;
 
         // validate the model
         lys_parse_path(ctx, outputFileName, LYS_IN_YANG);
         printf("Validation finished\n");
 
+        ly_ctx_destroy(ctx, NULL);
+        cout << "DONE" << endl;
         return 0;
     }
 

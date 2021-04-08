@@ -68,9 +68,9 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |sdfEvent|notification|
 |sdfInputData/sdfOutputData|input/output translated like sdfProperty|
 |sdfData (type integer/number/boolean/string)|typedef|done|
-|sdfData (type array with items of type integer/number/boolean/string)|grouping with leaf-list|
-|sdfData (type array with items of type object (compound-type))|grouping  with list|
-|sdfData (type object (compound-type))|grouping with container|
+|sdfData (type array with items of type integer/number/boolean/string)|grouping with leaf-list|done|
+|sdfData (type array with items of type object (compound-type))|grouping  with list|done|
+|sdfData (type object (compound-type))|grouping with container|done|
 |sdfRef (to sdfData/sdfProperty of type integer/number/boolean/string or array with items of the aforementioned types)|leafref|
 |sdfRef (to sdfData of type array/object)|uses|
 |sdfRef (to sdfProperty of type object or type array with items of type object)|uses (create a grouping for the container that the sdfProperty was translated to)|
