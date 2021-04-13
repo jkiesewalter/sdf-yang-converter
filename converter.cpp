@@ -43,6 +43,17 @@ vector<shared_ptr<lys_node>> nodeStore;
 vector<lys_tpdf> tpdfStore;
 vector<lys_restr> restrStore;
 
+/*
+ * vector of tuples with typedef names and types that reference those typedefs
+ * that still need to be assigned
+ */
+vector<tuple<string, lys_type*>> missingTpdfOfType;
+/*
+ * vector of tuples with leaf/leaf-list names and leafref type infos
+ * that still need to be assigned
+ */
+vector<tuple<string, lys_type_info_lref*>> missingLeafsOfLeafrefs;
+
 struct lys_tpdf stringTpdf = {
         .name = "string",
         .type = {.base = LY_TYPE_STRING}
@@ -124,6 +135,19 @@ lys_restr* storeRestriction(lys_restr restr)
     }
     restrStore.push_back(restr);
     return &restrStore.back();
+}
+
+lys_tpdf* storeTypedef(lys_tpdf tpdf)
+{
+    //cout << stringStore.size() << "/"<<stringStore.capacity();
+    if (tpdfStore.size() == tpdfStore.max_size())
+    {
+        cerr << "storeTypedef: vector is full, "
+                "cannot store more typedefs" << endl;
+        return NULL;
+    }
+    tpdfStore.push_back(tpdf);
+    return &tpdfStore.back();
 }
 
 
@@ -1702,16 +1726,16 @@ sdfThing* submoduleToSdfThing(struct lys_submodule *submodule)
     return thing;
 }*/
 
-void fillLysType(sdfData *data, struct lys_type *type)
+void fillLysType(sdfData *data, struct lys_type &type)
 {
-    type->base = stringToLType(data->getSimpType());
+    type.base = stringToLType(data->getSimpType());
     // if no type is given
-    if (type->base == LY_TYPE_UNKNOWN)
+    if (type.base == LY_TYPE_UNKNOWN)
     {
         if (data->getDefaultIntDefined() || data->getConstantIntDefined())
-            type->base = stringToLType(json_integer);
+            type.base = stringToLType(json_integer);
 
-        else if (data->getDefaultIntDefined() || data->getConstantBoolDefined())
+        else if (data->getDefaultBoolDefined() || data->getConstantBoolDefined())
             data->setSimpType(json_boolean);
 
         else if (!isnan(data->getMinimum()) || !isnan(data->getMaximum())
@@ -1720,14 +1744,14 @@ void fillLysType(sdfData *data, struct lys_type *type)
                 || !isnan(data->getMultipleOf())
                 || !isnan(data->getConstantNumber())
                 || !isnan(data->getDefaultNumber()))
-            type->base = stringToLType(json_number);
+            type.base = stringToLType(json_number);
 
         else if (!isnan(data->getMinLength())
                 || !isnan(data->getMaxLength()) || data->getPattern() != ""
                 || !data->getEnumString().empty()
                 || data->getDefaultString() != ""
                 || data->getConstantString() != "")
-            type->base = stringToLType(json_string);
+            type.base = stringToLType(json_string);
 
         else if (!isnan(data->getMinItems()) || !isnan(data->getMaxItems())
                 || data->getItemConstr() || data->getUniqueItemsDefined()
@@ -1739,17 +1763,17 @@ void fillLysType(sdfData *data, struct lys_type *type)
                 || !data->getConstantIntArray().empty()
                 || !data->getConstantStringArray().empty()
                 || !data->getConstantNumberArray().empty())
-            type->base = stringToLType(json_array);
+            type.base = stringToLType(json_array);
 
         else if (!data->getRequiredObjectProperties().empty()
                 || !data->getObjectProperties().empty())
-            type->base = stringToLType(json_object);
+            type.base = stringToLType(json_object);
     }
 
     if (!data->getEnumString().empty())
     {
-        type->base = LY_TYPE_ENUM;
-        type->der = &enumTpdf;
+        type.base = LY_TYPE_ENUM;
+        type.der = &enumTpdf;
         //int enmSize = 0; // TODO: clean this up
         //static std::vector<std::string> enmNames;
         /*
@@ -1765,29 +1789,29 @@ void fillLysType(sdfData *data, struct lys_type *type)
         }*/
         int enmSize = data->getEnumString().size();
         vector<string> enm = data->getEnumString();
-        type->info.enums.count = enmSize;
+        type.info.enums.count = enmSize;
         //static std::vector<lys_type_enum> enms(enmSize);
         for (int i = 0; i < enmSize; i++)
         {
-            //type->info.enums.enm[i] = new lys_type_enum();
-            type->info.enums.enm[i].name = enm[i].c_str();
-            type->info.enums.enm[i].value = i;
+            //type.info.enums.enm[i] = new lys_type_enum();
+            type.info.enums.enm[i].name = enm[i].c_str();
+            type.info.enums.enm[i].value = i;
             //enms[i].name = enm[i].c_str();
             //enms[i].value = i;
         }
-        //type->info.enums.enm = enms.data();
+        //type.info.enums.enm = enms.data();
     }
-    else if (type->base == LY_TYPE_BOOL)
+    else if (type.base == LY_TYPE_BOOL)
     {
-        type->der = &booleanTpdf;
+        type.der = &booleanTpdf;
     }
-    /*else if (type->base == LY_TYPE_DEC64)
+    /*else if (type.base == LY_TYPE_DEC64)
     {
-        type->der = &dec64Tpdf;
-        type->info.dec64.dig = 6;
+        type.der = &dec64Tpdf;
+        type.info.dec64.dig = 6;
         // TODO: decide number of fraction-digits
         // (std::to_string is always 6)
-        type->info.dec64.div = (int)data->getMultipleOf();
+        type.info.dec64.div = (int)data->getMultipleOf();
         // TODO: prioritise constant over range? -> ranges can or'ed
         const char *range = data->getConstantAsCharArray();
         if (!range)
@@ -1797,44 +1821,44 @@ void fillLysType(sdfData *data, struct lys_type *type)
         {
             lys_restr rangeRestr = {};
             rangeRestr.expr = range;
-            type->info.dec64.range = storeRestriction(rangeRestr);
+            type.info.dec64.range = storeRestriction(rangeRestr);
         }
 
     }*/
-    else if (type->base == LY_TYPE_STRING)
+    else if (type.base == LY_TYPE_STRING)
     {
-        type->der = &stringTpdf;
+        type.der = &stringTpdf;
         const char *range = floatToRange(data->getMinLength(),
                 data->getMaxLength());
         if (range)
         {
             lys_restr lenRestr = {};
             lenRestr.expr = range;
-            type->info.str.length = storeRestriction(lenRestr);
+            type.info.str.length = storeRestriction(lenRestr);
         }
         char ack = 0x06; // ACK for match
         unsigned int patCnt = 0;
-        type->info.str.patterns = new lys_restr[2]();
+        type.info.str.patterns = new lys_restr[2]();
         if (data->getConstantString() != "")
         {
             lys_restr constRestr = {};
             constRestr.expr = storeString(ack + data->getConstantString());
-            type->info.str.patterns[patCnt++] = *storeRestriction(constRestr);
+            type.info.str.patterns[patCnt++] = *storeRestriction(constRestr);
         }
         if (data->getPattern() != "")
         {
             lys_restr patRestr = {};
             patRestr.expr = storeString(ack + data->getPattern());
-            type->info.str.patterns[patCnt++] = *storeRestriction(patRestr);
+            type.info.str.patterns[patCnt++] = *storeRestriction(patRestr);
         }
-        type->info.str.pat_count = patCnt;
+        type.info.str.pat_count = patCnt;
         if (patCnt == 0)
-            delete[] type->info.str.patterns;
+            delete[] type.info.str.patterns;
     }
 
-    else if (type->base == LY_TYPE_DEC64 || type->base == LY_TYPE_INT64)
+    else if (type.base == LY_TYPE_DEC64 || type.base == LY_TYPE_INT64)
     {
-        //type->base = LY_TYPE_INT64;
+        //type.base = LY_TYPE_INT64;
         const char *constRange = storeString(data->getConstantAsString());
         // TODO: take spaces out of range string in rangeToFloat
         const char *range = floatToRange(data->getMinimum(), data->getMaximum());
@@ -1849,19 +1873,19 @@ void fillLysType(sdfData *data, struct lys_type *type)
             else if (range)
                 rangeRestr.expr = range;
 
-            if (type->base == LY_TYPE_INT64)
+            if (type.base == LY_TYPE_INT64)
             {
-                type->der = &intTpdf;
-                type->info.num.range = storeRestriction(rangeRestr);
+                type.der = &intTpdf;
+                type.info.num.range = storeRestriction(rangeRestr);
             }
             else
             {
-                type->der = &dec64Tpdf;
-                type->info.dec64.range = storeRestriction(rangeRestr);
-                type->info.dec64.dig = 6;
+                type.der = &dec64Tpdf;
+                type.info.dec64.range = storeRestriction(rangeRestr);
+                type.info.dec64.dig = 6;
                 // TODO: decide number of fraction-digits
                 // (std::to_string is always 6)
-                type->info.dec64.div = (int)data->getMultipleOf();
+                type.info.dec64.div = (int)data->getMultipleOf();
             }
         }
         // if both a constant and a min-max range are given, create a union
@@ -1872,23 +1896,23 @@ void fillLysType(sdfData *data, struct lys_type *type)
             constRestr.expr = constRange;
             rangeRestr.expr = range;
 
-            type->info.uni.count = 2;
-            type->info.uni.types = (lys_type*)calloc(2, sizeof(lys_type));
+            type.info.uni.count = 2;
+            type.info.uni.types = (lys_type*)calloc(2, sizeof(lys_type));
 
-            if (type->base == LY_TYPE_INT64)
+            if (type.base == LY_TYPE_INT64)
             {
                 lys_type t =
                 {
                         .base = LY_TYPE_INT64,
                         .der = &intTpdf,
-                        .parent = type->parent,
+                        .parent = type.parent,
                 };
                 t.info.num.range =
                         storeRestriction(constRestr);
-                type->info.uni.types[0] = t;
+                type.info.uni.types[0] = t;
                 t.info.num.range =
                         storeRestriction(rangeRestr);
-                type->info.uni.types[1] = t;
+                type.info.uni.types[1] = t;
             }
             else
             {
@@ -1896,7 +1920,7 @@ void fillLysType(sdfData *data, struct lys_type *type)
                 {
                         .base = LY_TYPE_DEC64,
                         .der = &dec64Tpdf,
-                        .parent = type->parent,
+                        .parent = type.parent,
                 };
                 t.info.dec64.dig = 6;
                 // TODO: decide number of fraction-digits
@@ -1905,14 +1929,14 @@ void fillLysType(sdfData *data, struct lys_type *type)
 
                 t.info.dec64.range =
                         storeRestriction(constRestr);
-                type->info.uni.types[0] = t;
+                type.info.uni.types[0] = t;
                 t.info.dec64.range =
                         storeRestriction(rangeRestr);
-                type->info.uni.types[1] = t;
+                type.info.uni.types[1] = t;
             }
 
-            type->base = LY_TYPE_UNION;
-            type->der = &unionTpdf;
+            type.base = LY_TYPE_UNION;
+            type.der = &unionTpdf;
 
             /*string tmp;
             tmp =  avoidNull(
@@ -1927,51 +1951,85 @@ void fillLysType(sdfData *data, struct lys_type *type)
         }
         else
         {
-            if (type->base == LY_TYPE_INT64)
+            if (type.base == LY_TYPE_INT64)
             {
-                type->der = &intTpdf;
+                type.der = &intTpdf;
             }
             else
             {
-                type->der = &dec64Tpdf;
-                type->info.dec64.dig = 6;
+                type.der = &dec64Tpdf;
+                type.info.dec64.dig = 6;
                 // TODO: decide number of fraction-digits
                 // (std::to_string is always 6)
-                type->info.dec64.div = (int)data->getMultipleOf();
+                type.info.dec64.div = (int)data->getMultipleOf();
             }
         }
     }
-    else if (data->getReference())
+    /*else */if (data->getReference())
     {
         sdfData *ref = dynamic_cast<sdfData*>(data->getReference());
-        // ifref is of type int, number, string, bool or array with items
-        // of said types
+        sdfData *propRef = dynamic_cast<sdfProperty*>(data->getReference());
+
+        // if the reference refers to an sdfData of type int, number,
+        // string, bool or array with items of said types
         if (ref && ref->getSimpType() != json_object
                 && (ref->getSimpType() != json_array
                         || ref->getItemConstr()->getSimpType() != json_object))
         {
-            type->der = &leafrefTpdf;
-            type->info.lref.path = "test"; //TODO
+            // if the reference refers to an sdfProperty create a leafref
+            if (propRef)
+            {
+                // TODO: transfer contents of info to refine statement
+                lys_tpdf *parent = type.parent;
+                type = {};
+                type.parent = parent;
+                type.base = LY_TYPE_LEAFREF;
+                type.der = &leafrefTpdf;
+
+                missingLeafsOfLeafrefs.push_back(
+                        tuple<string, lys_type_info_lref*>{
+                                    propRef->getName(), &type.info.lref});
+            }
+            // else  assign the correspoding typedef
+            else
+            {
+                lys_tpdf *parent = type.parent;
+                type = {};
+                type.parent = parent;
+                type.base = LY_TYPE_DER;
+
+                missingTpdfOfType.push_back(tuple<string, lys_type*>{ref->getName(),
+                        &type});
+            }
         }
         // if ref is of type object or array with items of type object
         else if (ref && (ref->getSimpType() == json_array
                 || ref->getSimpType() == json_object))
         {
-            sdfProperty *propRef = dynamic_cast<sdfProperty*>
-                (data->getReference());
-            // if data references an sdfProperty
+            // parent node is of type uses
+            ((lys_node*)type.parent)->nodetype = LYS_USES;
+
+            // if ref actually references an sdfProperty
             if (propRef)
             {
-                // TODO: uses of grouping that has to be created
-                ((lys_node*)type->parent)->nodetype = LYS_USES;
+                // TODO: uses of grouping that has to be created, refine?
             }
             else
             {
-                // TODO: uses of existing grouping
-                ((lys_node*)type->parent)->nodetype = LYS_USES;
+                // TODO: uses of existing grouping, refine?
+                for (int i = 0; i < nodeStore.size(); i++)
+                {
+                    if (nodeStore[i] &&
+                            avoidNull(nodeStore[i]->name) == ref->getName() &&
+                            nodeStore[i]->nodetype == LYS_GROUPING)
+                    {
+                        lys_node_uses *parent = (lys_node_uses*)type.parent;
+                        parent->grp = (lys_node_grp*)nodeStore[i];
+                    }
+                }
             }
         }
-        // if data references an sdfObject
+        // if data references an sdfObject (is this even possible? no?)
         else
         {
             // TODO
@@ -1981,8 +2039,9 @@ void fillLysType(sdfData *data, struct lys_type *type)
 
 struct lys_tpdf * sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
 {
-    tpdf->name = data->getNameAsArray();
-    tpdf->dsc = data->getDescriptionAsArray();
+    tpdf->name = storeString(data->getName());//data->getNameAsArray();
+    tpdf->dsc = storeString(data->getDescription());
+    //data->getDescriptionAsArray();
     tpdf->ref = NULL;
     tpdf->ext_size = 0;
     //tpdf->ref = NULL; // optional
@@ -1997,7 +2056,7 @@ struct lys_tpdf * sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
 
     // type
     tpdf->type.parent = tpdf;
-    fillLysType(data, &tpdf->type);
+    fillLysType(data, tpdf->type);
 
     tpdf->dflt = storeString(data->getDefaultAsString());
     //const char *tmp = data->getDefaultAsCharArray();
@@ -2101,20 +2160,35 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
         shared_ptr<lys_node_leaflist> leaflist =
                 shared_ptr<lys_node_leaflist>(new lys_node_leaflist());
         leaflist->nodetype = LYS_LEAFLIST;
-
         leaflist->type.parent = (lys_tpdf*)leaflist.get();
-        fillLysType(data->getItemConstr(), &leaflist->type);
+        fillLysType(data->getItemConstr(), leaflist->type);
+
         if (data->getUnits() != "")
             leaflist->units = data->getUnitsAsArray(); // optional
-        leaflist->dflt = (const char**)data->getDefaultAsCharArray();
-        //if (!isnan(prop->getMinItems()))
+        //leaflist->dflt = (const char**)data->getDefaultAsCharArray();
+
         leaflist->min = data->getMinItems();
-        //if (!isnan(prop->getMaxItems()))
         leaflist->max = data->getMaxItems();
 
+        vector<string> dfltVec = data->getDefaultArrayAsStringVector();
+        // <<The "default" statement MUST NOT be present on nodes where
+        // "min-elements" has a value greater than or equal to one.>>
+        if (leaflist->min >= 1)
+            cerr << "Nodes where min-elements has a value greater than or equal"
+                    " to one cannot have default values in YANG."
+                    " The default value(s) of '" + data->getName()
+                    + "' will not be translated." << endl;
+        else
+        {
+            leaflist->dflt = new const char*[dfltVec.size()];
+            for (int i = 0; i < dfltVec.size(); i++)
+                leaflist->dflt[i] = storeString(dfltVec[i]);
+            leaflist->dflt_size = dfltVec.size();
+            if (leaflist->dflt_size == 0)
+                delete[] leaflist->dflt;
+        }
+
         node = storeNode((shared_ptr<lys_node>&)leaflist);
-        //nodeStore.push_back((shared_ptr<lys_node>&)leaflist);
-        //node = nodeStore.back().get();
     }
 
     // type int, number, string or bool
@@ -2126,7 +2200,8 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
         leaf->nodetype = LYS_LEAF;
 
         leaf->type.parent = (lys_tpdf*)leaf.get();
-        fillLysType(data, &leaf->type); // TODO: const?
+        fillLysType(data, leaf->type); // TODO: const?
+
         if (data->getUnits() != "")
             leaf->units = data->getUnitsAsArray();
 
@@ -2143,11 +2218,17 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     /*if (node->parent->nodetype == LYS_CONTAINER
             || node->parent->nodetype == LYS_LIST
             || node->parent->nodetype == LYS_CASE)
-    */if(false){
+    */{
         shared_ptr<lys_node_choice> choice =
                 //shared_ptr<lys_node_choice>(new lys_node_choice());
                 make_shared<lys_node_choice>((lys_node_choice&)*node);
         choice->nodetype = LYS_CHOICE;
+
+        // extract default from original node
+        const char *dflt = NULL;
+        if (node->nodetype == LYS_LEAF || node->nodetype == LYS_LEAFLIST)
+            dflt = ((lys_node_leaf*)node)->dflt;
+
         lys_node *n;
         for (sdfData *c : data->getChoice())
         {
@@ -2158,6 +2239,12 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
             caseP->name = storeString(c->getName());
 
             n = sdfDataToNode(c, n, module);
+
+            // TODO: if default value matches one case make it default case
+            // the following causes conflicts
+            //if (n->nodetype == LYS_LEAF || n->nodetype == LYS_LEAFLIST)
+            //    ((lys_node_leaf*)n)->dflt = dflt;
+
             addNode(*n, (lys_node&)*caseP, module);
 
             addNode((lys_node&)*caseP, (lys_node&)*choice, module);
@@ -2165,6 +2252,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
             node = storeNode((shared_ptr<lys_node>&)choice);
             // TODO: take into consideration what is currently overwritten
             // default etc.
+            // Put default into each case
         }
     }
 
@@ -2230,8 +2318,14 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     {
         if (i->getObjectProperties().empty() && !i->getItemConstr())
         {
-            sdfDataToTypedef(i, &module.tpdf[cnt]);
-            module.tpdf[cnt].module = &module;
+            //sdfDataToTypedef(i, &module.tpdf[cnt]);
+            //module.tpdf[cnt].module = &module;
+            //tpdfStore.push_back(module.tpdf[cnt]);
+            lys_tpdf tpdf = {};
+            sdfDataToTypedef(i, &tpdf);
+            tpdf.module = &module;
+            module.tpdf[cnt] = *storeTypedef(tpdf);
+
             cnt++;
         }
         // else create a grouping
@@ -2249,6 +2343,8 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
         }
     }
     module.tpdf_size = cnt;
+    if (module.tpdf_size == 0)
+        delete[] module.tpdf;
 
     lys_node_container props = {
             .name = "properties",
@@ -2293,6 +2389,38 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     for (sdfEvent *i : object.getEvents())
     {
 
+    }
+
+    // assign typedef pointers to types
+    string name;
+    lys_type *type;
+    for (tuple<string, lys_type*> t : missingTpdfOfType)
+    {
+        tie(name, type) = t;
+        for (int i = 0; i < tpdfStore.size(); i++)
+        {
+            if (tpdfStore[i].name && avoidNull(tpdfStore[i].name) == name)
+            {
+                type->der = &tpdfStore[i];
+                break;
+            }
+        }
+    }
+    lys_type_info_lref *lref;
+    // assign leaf pointers and paths to leafrefs
+    // TODO: nodes must have unique names for this to work, find workaround
+    for (tuple<string, lys_type_info_lref*> l : missingLeafsOfLeafrefs)
+    {
+        tie(name, lref) = l;
+        for (int i = 0; i < nodeStore.size(); i++)
+        {
+            if (nodeStore[i] && avoidNull(nodeStore[i]->name) == name)
+            {
+                lref->target = (lys_node_leaf*)nodeStore[i].get();
+                lref->path = storeString(generatePath(nodeStore[i].get()));
+                break;
+            }
+        }
     }
 
     return &module;

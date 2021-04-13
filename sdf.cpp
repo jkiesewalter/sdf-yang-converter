@@ -358,8 +358,8 @@ sdfData::sdfData(string _name, string _description, string _type,
     constantNumberArray = {};
     defaultIntArray = {};
     constantIntArray = {};
-    constantAsCharArray = NULL;
-    defaultAsCharArray = NULL;
+    //constantAsCharArray = NULL;
+    //defaultAsCharArray = NULL;
     exclusiveMaximum_bool = false;
     exclusiveMinimum_bool = false;
     minLength = NAN;
@@ -429,8 +429,8 @@ sdfData::sdfData(sdfData &data)
     constantNumberArray = data.getConstantNumberArray();
     defaultIntArray = data.getDefaultIntArray();
     constantIntArray = data.getConstantIntArray();
-    constantAsCharArray = data.getConstantAsCharArray();
-    defaultAsCharArray = data.getDefaultAsCharArray();
+    //constantAsCharArray = data.getConstantAsCharArray();
+    //defaultAsCharArray = data.getDefaultAsCharArray();
     exclusiveMaximum_bool = false; // TODO
     exclusiveMinimum_bool = false; // TODO
     minLength = data.getMinLength();
@@ -1842,7 +1842,25 @@ sdfData* sdfData::jsonToData(json input)
                 this->constBoolDefined = true;
             }
             else if (it.value().is_array())
-                ;// TODO: fix this
+            {
+                for (json::iterator jt = it.value().begin();
+                        jt != it.value().end(); ++jt)
+                {
+                    if (jt.value().is_number_integer()
+                            && (simpleType == json_integer
+                                    || simpleType == json_type_undef))
+                        this->constantIntArray.push_back(jt.value());
+
+                    else if (jt.value().is_number())
+                        this->constantNumberArray.push_back(jt.value());
+
+                    else if (jt.value().is_string())
+                        this->constantStringArray.push_back(jt.value());
+
+                    else if (jt.value().is_boolean())
+                        this->constantBoolArray.push_back(jt.value());
+                }
+            }
         }
         else if (it.key() == "default" && !it.value().empty())
         {
@@ -1864,7 +1882,25 @@ sdfData* sdfData::jsonToData(json input)
                 this->defaultBoolDefined = true;
             }
             else if (it.value().is_array())
-                ;// TODO: fix this
+            {
+                for (json::iterator jt = it.value().begin();
+                        jt != it.value().end(); ++jt)
+                {
+                    if (jt.value().is_number_integer()
+                            && (simpleType == json_integer
+                                    || simpleType == json_type_undef))
+                        this->defaultIntArray.push_back(jt.value());
+
+                    else if (jt.value().is_number())
+                        this->defaultNumberArray.push_back(jt.value());
+
+                    else if (jt.value().is_string())
+                        this->defaultStringArray.push_back(jt.value());
+
+                    else if (jt.value().is_boolean())
+                        this->defaultBoolArray.push_back(jt.value());
+                }
+            }
         }
         else if (it.key() == "minimum" && !it.value().empty())
         {
@@ -2527,37 +2563,40 @@ const char* sdfData::getUnitsAsArray() const
 {
     return this->units.c_str();
 }
-
+/*
 const char* sdfData::getDefaultAsCharArray()
 {
+    cout << "WRONG FUNCTION USED: getDefaultAsCharArray" << endl;
     if (!defaultDefined)
         return NULL;
     std::string *str;
-    if (simpleType == json_number)
+    //if (simpleType == json_number)
+    if (!isnan(defaultNumber))
     {
-        /*
-        char buf[64];
-        if (snprintf(buf, sizeof(buf), "%f", defaultNumber) > 0)
-            defaultAsCharArray = buf;*/
         str = new std::string(std::to_string(defaultNumber));
         defaultAsCharArray = str->c_str();
     }
-    else if (simpleType == json_string && defaultString != "")
+    //else if (simpleType == json_string && defaultString != "")
+    else if (defaultString != "")
         defaultAsCharArray = defaultString.c_str();
 
-    else if (simpleType == json_boolean)
+    //else if (simpleType == json_boolean)
+    else if (defaultBoolDefined)
     {
         if (defaultBool == true)
             defaultAsCharArray = "true";
         else
             defaultAsCharArray = "false";
     }
-    else if (simpleType == json_integer)
+    //else if (simpleType == json_integer)
+    else if (defaultIntDefined)
     {
         str = new std::string(std::to_string(defaultInt));
         defaultAsCharArray = str->c_str();
     }
-    else if(simpleType == json_array)
+    //else if(simpleType == json_array)
+    else if(!defaultBoolArray.empty() || !defaultIntArray.empty()
+            || !defaultNumberArray.empty() || !defaultStringArray.empty())
     {
         // fill a vector with whatever default vector is defined
         // (only one of them can be != {})
@@ -2584,6 +2623,7 @@ const char* sdfData::getDefaultAsCharArray()
 
 const char* sdfData::getConstantAsCharArray()
 {
+    cout << "WRONG FUNCTION USED: getConstantAsCharArray" << endl;
     if (!constDefined)
         return NULL;
     std::string str;
@@ -2610,7 +2650,7 @@ const char* sdfData::getConstantAsCharArray()
 
     return constantAsCharArray;
 }
-
+*/
 sdfData* sdfData::getItemConstr() const
 {
     return item_constr;
@@ -3036,32 +3076,57 @@ string sdfData::getDefaultAsString()
         return "";
 
     string defStr;
-    if (simpleType == json_number)
+    if (simpleType == json_number || !isnan(defaultNumber))
     {
         defStr = string(to_string(defaultNumber));
     }
-    else if (simpleType == json_string && defaultString != "")
+    else if (simpleType == json_string || defaultString != "")
     {
         defStr = defaultString;
     }
 
-    else if (simpleType == json_boolean)
+    else if (simpleType == json_integer || defaultBoolDefined)
     {
         if (defaultBool == true)
             defStr = "true";
         else
             defStr = "false";
     }
-    else if (simpleType == json_integer)
+    else if (simpleType == json_integer || defaultIntDefined)
     {
         defStr = string(to_string(defaultInt));
     }
-    else if(simpleType == json_array)
+    else if(simpleType == json_array || !defaultBoolArray.empty()
+            || !defaultIntArray.empty() || !defaultNumberArray.empty()
+            || !defaultStringArray.empty())
     {
         cerr << "getDefaultAsString: wrong function for default arrays" << endl;
     }
 
     return defStr;
+}
+
+vector<string> sdfData::getDefaultArrayAsStringVector()
+{
+    // fill a vector with whatever default vector is defined
+    // (only one of them can be != {})
+    vector<string> strVec = defaultStringArray;
+
+    for (float i : defaultNumberArray)
+        strVec.push_back(to_string(i));
+
+    for (bool i : defaultBoolArray)
+    {
+        if (i == true)
+            strVec.push_back("true");
+        else
+            strVec.push_back("false");
+    }
+
+    for (int i : defaultIntArray)
+        strVec.push_back(to_string(i));
+
+    return strVec;
 }
 
 string sdfData::getConstantAsString()
@@ -3070,29 +3135,27 @@ string sdfData::getConstantAsString()
         return "";
 
     string constStr;
-    //if (simpleType == json_number)
-    if (!isnan(constantNumber))
+    if (simpleType == json_number || !isnan(constantNumber))
     {
         constStr = to_string(constantNumber);
     }
-    //else if (simpleType == json_string && constantString != "")
-    else if (constantString != "")
+    else if (simpleType == json_string || constantString != "")
         constStr = constantString;
 
-    //else if (simpleType == json_boolean)
-    else if (constBoolDefined)
+    else if (simpleType == json_boolean || constBoolDefined)
     {
         if (constantBool == true)
             constStr = "true";
         else
             constStr = "false";
     }
-    //else if (simpleType == json_integer)
-    else if (constIntDefined)
+    else if (simpleType == json_integer || constIntDefined)
     {
         constStr = to_string(constantInt);
     }
-    else if(simpleType == json_array)
+    else if(simpleType == json_array || !constantBoolArray.empty()
+            || !constantIntArray.empty() || !constantNumberArray.empty()
+            || !constantStringArray.empty())
     {
         cerr << "getDefaultAsString: wrong function for constant arrays"
                 << endl;

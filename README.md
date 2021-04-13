@@ -8,7 +8,7 @@ Prerequisites:
 * [nlohmann/json](https://github.com/nlohmann/json) needs to be installed to parse JSON files
 * [nlohmann/json-shema-validator](https://github.com/pboettch/json-schema-validator) needs to be installed to validate resulting SDF JSON files with a JSON schema (in this case the validation schema from the [SDF Internet Draft](https://www.ietf.org/archive/id/draft-ietf-asdf-sdf-05.html) is used)
 
-Compile the code with `make`. Run the converter with `./converter -f path/to/input/file [- o path/to/output/file] -c path/to/yang/repo`, e.g. `./converter -f yang/standard/ietf/RFC/ietf-l2vpn-svc.yang -c ./yang` for conversion from YANG to SDF. If no output file name is provided, the output file will be named after the input model.
+Compile the code with `make`. Run the converter with `./converter -f path/to/input/file [- o path/to/output/file] -c path/to/yang/repo`, e.g. `./converter -f ./yang/standard/ietf/RFC/ietf-l2vpn-svc.yang -c ./yang` for conversion from YANG to SDF. If no output file name is provided, the output file will be named after the input model.
 
 ## Conversion table YANG->SDF
 
@@ -47,7 +47,6 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |revisions|first revision is tranlated to version of SDF|done|Ignore the other revisions?|
 |import|Translate the module that the import references (elements can now be referenced by sdfRef)|done|
 |when/must|Mentioned in the description|(done)|JSON<->XPATH query language in progress|
-|||
 
 \* please note that *property* is not the same as sdfProperty and *type object* is not the same as sdfObject
 
@@ -56,11 +55,11 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 
 |SDF statement|translated to YANG|done?|problems/remarks|
 |-|-|-|-|
-|sdfProduct?|module on highest level, container otherwise|
+|sdfProduct|module on highest level, container otherwise|Will sdfProduct even exist in future SDF versions?|
 |sdfThing|module on highest level, container otherwise|
 |sdfObject|module on highest level, container otherwise|done||
 |sdfProperty (type integer/number/boolean/string)|leaf|done|
-|sdfProperty (type array with items of type integer/number/boolean/string)|leaf-list|done|
+|sdfProperty (type array with items of type integer/number/boolean/string)|leaf-list|done|When the resulting leaf-list has one or more default values the libyang parser complains although I think that should be valid.|
 |sdfProperty (type array with items of type object (compound-type))|list|done|
 |sdfProperty (type object (compound-type))|container|done|
 |sdfAction (of a sdfObject that is __not__ part of a sdfThing)|RPC|
@@ -71,7 +70,8 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |sdfData (type array with items of type integer/number/boolean/string)|grouping with leaf-list|done|
 |sdfData (type array with items of type object (compound-type))|grouping  with list|done|
 |sdfData (type object (compound-type))|grouping with container|done|
-|sdfRef (to sdfData/sdfProperty of type integer/number/boolean/string or array with items of the aforementioned types)|leafref|
-|sdfRef (to sdfData of type array/object)|uses|
-|sdfRef (to sdfProperty of type object or type array with items of type object)|uses (create a grouping for the container that the sdfProperty was translated to)|
-|sdfChoice|choice with one case for each element of the sdfChoice; each element is translated like a sdfProperty|done|If the sdfChoice only contains different types it could also be translated to YANG type union (of those different types)|
+|sdfRef (to sdfData of type integer/number/boolean/string or array with items of the aforementioned types)|type = typedef corresponding to the sdfData element|
+|sdfRef (to sdfProperty of type integer/number/boolean/string or array with items of the aforementioned types)|leafref|
+|sdfRef (to sdfData of type array/object)|uses (and refine if necessary)|
+|sdfRef (to sdfProperty of type object or type array with items of type object)|uses (and refine if necessary) (create a grouping for the container that the sdfProperty was translated to)|
+|sdfChoice|choice with one case for each element of the sdfChoice; each element is translated like a sdfProperty|done|If the sdfChoice only contains different types it could also be translated to YANG type union (of those different types). YANG choices can only have default cases, so how should default values of simple types be translated?|

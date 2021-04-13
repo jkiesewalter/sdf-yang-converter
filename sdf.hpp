@@ -290,7 +290,7 @@ public:
     std::string getConstantString();
     sdfData* getConstantObject() const;
     std::string getConstantAsString();
-    const char * getConstantAsCharArray();
+    //const char * getConstantAsCharArray();
     std::string getContentFormat();
     bool getDefaultBool();
     int getDefaultInt();
@@ -298,7 +298,8 @@ public:
     std::string getDefaultString();
     sdfData* getDefaultObject() const;
     std::string getDefaultAsString();
-    const char * getDefaultAsCharArray();
+    std::vector<std::string> getDefaultArrayAsStringVector();
+    //const char * getDefaultAsCharArray();
     bool getDefaultDefined() const;
     bool getConstantDefined() const;
     bool getDefaultIntDefined() const;
@@ -393,8 +394,8 @@ private:
     /*std::vector<std::vector<auto>> enumArray;
     std::vector<auto> constantArray;
     std::vector<auto> defaultArray;*/
-    const char *constantAsCharArray;
-    const char *defaultAsCharArray;
+    //const char *constantAsCharArray;
+    //const char *defaultAsCharArray;
     float minimum;
     float maximum;
     float exclusiveMinimum_number; // TODO: number > exclusiveMin vs >=
@@ -498,7 +499,7 @@ class sdfProperty : public sdfData, virtual public sdfObjectElement
 public:
     sdfProperty(std::string _name = "",
             std::string _description = "",
-            jsonDataType _type = {},
+            jsonDataType _type = json_type_undef,
             sdfCommon *_reference = NULL,
             std::vector<sdfCommon*> _required = {},
              sdfObject *_parentObject = NULL);
