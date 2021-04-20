@@ -70,8 +70,8 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |sdfData (type array with items of type integer/number/boolean/string)|grouping with leaf-list|done|
 |sdfData (type array with items of type object (compound-type))|grouping  with list|done|
 |sdfData (type object (compound-type))|grouping with container|done|
-|sdfRef (to sdfData of type integer/number/boolean/string or array with items of the aforementioned types)|type = typedef corresponding to the sdfData element|
-|sdfRef (to sdfProperty of type integer/number/boolean/string or array with items of the aforementioned types)|leafref|
-|sdfRef (to sdfData of type array/object)|uses (and refine if necessary)|
-|sdfRef (to sdfProperty of type object or type array with items of type object)|uses (and refine if necessary) (create a grouping for the container that the sdfProperty was translated to)|
+|sdfRef (to sdfData of type integer/number/boolean/string|type is set to the typedef corresponding to the sdfData element|done|
+|sdfRef (to sdfProperty of type integer/number/boolean/string or array with items of the aforementioned types)|leafref|done|
+|sdfRef (to sdfData of type array/object)|uses (and refine if necessary)|If a grouping that contains the corresponding container/list is is used by a node the node will get a child node of the container/list. It would be better if the node would *become* the container/list but a grouping cannot represent a list directly.|
+|sdfRef (to sdfProperty of type object or type array with items of type object)|uses (and refine if necessary) (create a grouping for the container that the sdfProperty was translated to)|see above|
 |sdfChoice|choice with one case for each element of the sdfChoice; each element is translated like a sdfProperty|done|If the sdfChoice only contains different types it could also be translated to YANG type union (of those different types). YANG choices can only have default cases, so how should default values of simple types be translated?|

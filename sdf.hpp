@@ -49,6 +49,8 @@ class sdfProperty;
 std::string jsonDTypeToString(jsonDataType type);
 jsonDataType stringToJsonDType(std::string str);
 sdfCommon* refToCommon(std::string ref);
+std::vector<std::tuple<std::string, sdfCommon*>> assignRefs(
+        std::vector<std::tuple<std::string, sdfCommon*>> unassignedRefs);
 std::string  correctValue(std::string val);
 bool validateJson(nlohmann::json sdf,
         std::string schemaFileName = "sdf-validation.cddl");
@@ -343,6 +345,7 @@ public:
     sdfCommon* getParentCommon() const;
     sdfData* getItemConstr() const;
     bool isItemConstr() const;
+    bool isObjectProp() const;
     std::vector<sdfData*> getChoice() const;
     std::vector<sdfData*> getObjectProperties() const;
     std::vector<std::string> getRequiredObjectProperties() const;

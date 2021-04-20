@@ -7,6 +7,8 @@ using namespace std;
 
 
 map<string, sdfCommon*> existingDefinitons;
+vector<tuple<string, sdfCommon*>> unassignedRefs;
+vector<tuple<string, sdfCommon*>> unassignedReqs;
 
 string jsonDTypeToString(jsonDataType type)
 {
@@ -73,8 +75,8 @@ sdfCommon* refToCommon(string ref)
     regex sameNsRegex("#/.*");
     if (!regex_match(ref, sameNsRegex))
     {
-        cerr << "Definition from different namespace could not be loaded"
-                << endl;
+        cerr << "refToCommon(): definition for reference " << ref
+                << " from different namespace could not be loaded" << endl;
         return NULL;
     }
     else if (existingDefinitons[ref] != NULL)
@@ -87,6 +89,28 @@ sdfCommon* refToCommon(string ref)
                 << ref << " does not exist" << endl;
         return NULL;
     }
+}
+
+vector<tuple<string, sdfCommon*>> assignRefs(
+        vector<tuple<string, sdfCommon*>> unassignedRefs)
+        //map<string, sdfCommon*> defs)
+{
+    // check for references left unassigned
+    string name;
+    sdfCommon *com;
+    vector<tuple<string, sdfCommon*>> stillLeft = {};
+
+    for (tuple<string, sdfCommon*> r : unassignedRefs)
+    {
+        tie(name, com) = r;
+        if (com)
+            com->setReference(refToCommon(name));
+
+        if (!com || !com->getReference())
+            stillLeft.push_back(r);
+    }
+
+    return stillLeft;
 }
 
 /*
@@ -909,11 +933,7 @@ string sdfData::generateReferenceString()
     if (!parent)
     {
         cerr << "sdfData::generateReferenceString(): sdfData object "
-                + this->getName()
-                + " has no assigned parent. Possibly it was only"
-                + " added as an output or input data reference and not"
-                + " as a datatype definition."
-                << endl;
+                + this->getName() + " has no assigned parent" << endl;
         return "";
     }
     else
@@ -1388,6 +1408,8 @@ sdfObject::sdfObject(string _name, string _description, sdfCommon *_reference,
               properties(_properties), actions(_actions), events(_events),
               datatypes(_datatypes)
 {
+    this->ns = NULL;
+    this->info = NULL;
     this->setParentThing(_parentThing);
 }
 
@@ -1588,6 +1610,8 @@ sdfThing::sdfThing(string _name, string _description, sdfCommon *_reference,
             : sdfCommon(_name, _description, _reference, _required),
               childThings(_things)//, childObjects(_objects)
 {
+    this->ns = NULL;
+    this->info = NULL;
     this->setParentThing(_parentThing);
 }
 
@@ -1739,11 +1763,18 @@ void sdfCommon::jsonToCommon(json input)
         else if (it.key() == "description")
             this->setDescription(it.value());
         else if (it.key() == "sdfRef")
-            this->reference = refToCommon(correctValue(it.value()));
+        {
+            //this->reference = refToCommon(correctValue(it.value()));
+            unassignedRefs.push_back(tuple<string, sdfCommon*>{
+                correctValue(it.value()), this});
+        }
         else if (it.key() == "sdfRequired")
             for (auto jt : it.value())
-                if (refToCommon(jt) != NULL)
-                    this->addRequired(refToCommon(jt));
+                //if (refToCommon(jt) != NULL)
+                //    this->addRequired(refToCommon(jt));
+                //else
+                unassignedReqs.push_back(tuple<string, sdfCommon*>{
+                    correctValue(jt), this});
     }
     existingDefinitons[this->generateReferenceString()] = this;
     //cout << "jsonToCommon: " << this->generateReferenceString() << endl;
@@ -1788,7 +1819,7 @@ sdfData* sdfData::jsonToData(json input)
                     else if (i.is_boolean())
                         this->enumBool.push_back(i);
                     else if (i.is_array())
-                        ; // TODO: fix this?*/
+                        ; // fix this?*/
                 }
             }
         }
@@ -1799,7 +1830,9 @@ sdfData* sdfData::jsonToData(json input)
             {
                 sdfData *choice = new sdfData();
                 choice->setName(correctValue(jt.key()));
-                this->addChoice(choice->jsonToData(jt.value()));
+                this->addChoice(choice);
+                choice->jsonToData(jt.value());
+                //this->addChoice(choice->jsonToData(jt.value()));
             }
         }
         else if (it.key() == "required" && !it.value().empty())
@@ -1821,7 +1854,10 @@ sdfData* sdfData::jsonToData(json input)
                 //cout << jt.key() << endl;
                 sdfData *objectProperty = new sdfData();
                 objectProperty->setName(correctValue(jt.key()));
-                this->addObjectProperty(objectProperty->jsonToData(jt.value()));
+                this->addObjectProperty(objectProperty);
+                objectProperty->jsonToData(jt.value());
+                //objectProperty->setParentCommon(this);
+                //this->addObjectProperty(objectProperty->jsonToData(jt.value()));
             }
         }
         if (it.key() == "const" && !it.value().empty())
@@ -1972,8 +2008,11 @@ sdfData* sdfData::jsonToData(json input)
         }
         else if (it.key() == "items" && !it.value().empty())
         {
-            this->item_constr = new sdfData();
-            this->item_constr->jsonToData(input["items"]);
+            //this->item_constr = new sdfData();
+            //this->item_constr->jsonToData(input["items"]);
+            sdfData *itemConstr = new sdfData();
+            this->setItemConstr(itemConstr);
+            itemConstr->jsonToData(input["items"]);
         }
         // TODO: keep key "units" for older versions?
         else if ((it.key() == "unit" || it.key() == "units")
@@ -2048,8 +2087,8 @@ sdfEvent* sdfEvent::jsonToEvent(json input)
             }*/
             sdfData *data = new sdfData();
             //data->setLabel("");
-            data->jsonToData(input["sdfOutputData"]);
             this->setOutputData(data);
+            data->jsonToData(input["sdfOutputData"]);
 
         }
         else if (it.key() == "sdfData" && !it.value().empty())
@@ -2079,8 +2118,8 @@ sdfAction* sdfAction::jsonToAction(json input)
                 this->addInputData(refData);
             }*/
             sdfData *data = new sdfData();
-            data->jsonToData(input["sdfInputData"]);
             this->setInputData(data);
+            data->jsonToData(input["sdfInputData"]);
         }
         else if (it.key() == "sdfRequiredInputData" && !it.value().empty())
         {
@@ -2098,8 +2137,8 @@ sdfAction* sdfAction::jsonToAction(json input)
                 this->addOutputData(refData);
             }*/
             sdfData *data = new sdfData();
-            data->jsonToData(input["sdfOutputData"]);
             this->setOutputData(data);
+            data->jsonToData(input["sdfOutputData"]);
         }
         else if (it.key() == "sdfData" && !it.value().empty())
         {
@@ -2202,6 +2241,10 @@ sdfObject* sdfObject::jsonToObject(json input)
             this->jsonToObject(input[it.key()]);
         }*/
     }
+
+    unassignedRefs = assignRefs(unassignedRefs);
+    unassignedReqs = assignRefs(unassignedReqs);
+
     // jsonToCommon needs to be called twice because of sdfRequired
     // (which cannot be filled before the rest of the object)
     this->jsonToCommon(input);
@@ -2252,6 +2295,8 @@ sdfThing* sdfThing::jsonToNestedThing(json input)
             }
         }
     }
+    unassignedRefs = assignRefs(unassignedRefs);
+    unassignedReqs = assignRefs(unassignedReqs);
     this->jsonToCommon(input);
     return this;
 }
@@ -2300,6 +2345,8 @@ sdfThing* sdfThing::jsonToThing(json input)
             }
         }
     }
+    unassignedRefs = assignRefs(unassignedRefs);
+    unassignedReqs = assignRefs(unassignedReqs);
     this->jsonToCommon(input);
     return this;
 }
@@ -2665,7 +2712,7 @@ void sdfData::addChoice(sdfData *choice)
 void sdfData::addObjectProperty(sdfData *property)
 {
     objectProperties.push_back(property);
-    property->setParentCommon((sdfCommon*)this);
+    property->setParentCommon(this);
 }
 
 void sdfData::addRequiredObjectProperty(string propertyName)
@@ -2972,11 +3019,25 @@ bool validateFile(std::string fileName, std::string schemaFileName)
 
 bool sdfData::isItemConstr() const
 {
-    cout << "here " << this->getName() <<endl;
     sdfData* parent = dynamic_cast<sdfData*>(this->getParentCommon());
     if (parent && this == parent->getItemConstr())
         return true;
 
+    cout << "here " << this->getName() <<endl;
+    return false;
+}
+
+
+bool sdfData::isObjectProp() const
+{
+    sdfData* parent = dynamic_cast<sdfData*>(this->getParentCommon());
+    //if (parent && this == parent->getItemConstr())
+    if (parent)
+    {
+        vector<sdfData*> op = parent->getObjectProperties();
+        if (find(op.begin(), op.end(), this) != op.end())
+            return true;
+    }
     cout << "here " << this->getName() <<endl;
     return false;
 }
