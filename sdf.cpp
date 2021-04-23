@@ -195,6 +195,16 @@ string sdfCommon::getPointer()
 }
 */
 
+sdfData* sdfCommon::getSdfDataReference() const
+{
+    return dynamic_cast<sdfData*>(reference);
+}
+
+sdfData* sdfCommon::getSdfPropertyReference() const
+{
+    return dynamic_cast<sdfProperty*>(reference);
+}
+
 void sdfCommon::addRequired(sdfCommon *common)
 {
     this->required.push_back(common);
@@ -822,6 +832,15 @@ float sdfData::getMaxItems()
     return maxItems;
 }
 
+float sdfData::getMaxItemsOfRef()
+{
+    sdfData *ref = this->getSdfDataReference();
+    if (isnan(maxItems) && ref)
+        return ref->getMaxItemsOfRef();
+
+    return maxItems;
+}
+
 float sdfData::getMaxLength()
 {
     return maxLength;
@@ -834,6 +853,15 @@ float sdfData::getMinimum()
 
 float sdfData::getMinItems()
 {
+    return minItems;
+}
+
+float sdfData::getMinItemsOfRef()
+{
+    sdfData *ref = this->getSdfDataReference();
+    if (isnan(minItems) && ref)
+        return ref->getMinItemsOfRef();
+
     return minItems;
 }
 
@@ -2703,6 +2731,15 @@ sdfData* sdfData::getItemConstr() const
     return item_constr;
 }
 
+sdfData* sdfData::getItemConstrOfRefs() const
+{
+    sdfData *ref = this->getSdfDataReference();
+    if (ref && !item_constr)
+        return ref->getItemConstrOfRefs();
+
+    return item_constr;
+}
+
 void sdfData::addChoice(sdfData *choice)
 {
     choice->setParentCommon(this);
@@ -2803,6 +2840,25 @@ std::vector<sdfData*> sdfData::getObjectProperties() const
     return objectProperties;
 }
 
+std::vector<sdfData*> sdfData::getObjectPropertiesOfRefs() const
+{
+    sdfData *ref = this->getSdfDataReference();
+    if (ref)
+    {
+        vector<sdfData*> refObjProps = ref->getObjectProperties();
+        vector<sdfData*> concatObjProps = {};
+
+        concatObjProps.insert(concatObjProps.end(),
+                objectProperties.begin(),
+                objectProperties.end());
+        concatObjProps.insert(concatObjProps.end(),
+                refObjProps.begin(),
+                refObjProps.end());
+        return concatObjProps;
+    }
+    return objectProperties;
+}
+
 void sdfData::setItemConstr(sdfData *constr)
 {
     //constr->setLabel(this->getLabel() + "-items");
@@ -2811,7 +2867,7 @@ void sdfData::setItemConstr(sdfData *constr)
     if (constr)
     {
         item_constr = constr;
-        item_constr->setParentCommon((sdfCommon*)this); // PRoblem
+        item_constr->setParentCommon((sdfCommon*)this); // Problem
     }
 }
 

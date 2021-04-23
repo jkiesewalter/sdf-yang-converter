@@ -45,6 +45,7 @@ class sdfCommon;
 class sdfThing;
 class sdfObject;
 class sdfProperty;
+class sdfData;
 
 std::string jsonDTypeToString(jsonDataType type);
 jsonDataType stringToJsonDType(std::string str);
@@ -76,6 +77,8 @@ public:
     sdfCommon* getReference();
     std::vector<sdfCommon*> getRequired();
     //sdfCommon* getParentCommon();
+    sdfData* getSdfDataReference() const;
+    sdfData* getSdfPropertyReference() const;
     // setters
     void setName(std::string _name);
     void setLabel(std::string _label);
@@ -319,9 +322,11 @@ public:
     jsonSchemaFormat getFormat();
     float getMaximum();
     float getMaxItems();
+    float getMaxItemsOfRef();
     float getMaxLength();
     float getMinimum();
     float getMinItems();
+    float getMinItemsOfRef();
     float getMinLength();
     float getMultipleOf();
     std::string getPattern();
@@ -344,10 +349,12 @@ public:
     std::vector<std::string> getDefaultStringArray() const;
     sdfCommon* getParentCommon() const;
     sdfData* getItemConstr() const;
+    sdfData* getItemConstrOfRefs() const;
     bool isItemConstr() const;
     bool isObjectProp() const;
     std::vector<sdfData*> getChoice() const;
     std::vector<sdfData*> getObjectProperties() const;
+    std::vector<sdfData*> getObjectPropertiesOfRefs() const;
     std::vector<std::string> getRequiredObjectProperties() const;
     // parsing
     void parseDefault(const char *value);
@@ -357,6 +364,7 @@ public:
     sdfData* jsonToData(nlohmann::json input);
 
 private:
+    // TODO: use a C union for constant and default values, maximum, minimum?
     bool constDefined;
     bool defaultDefined;
     jsonDataType simpleType;

@@ -2067,6 +2067,8 @@ void removeNode(lys_node &node)
     else if (node.next)
         node.next->prev = node.next;
 
+    node.prev = NULL;
+    node.next = NULL;
 }
 
 lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module)
@@ -2074,16 +2076,18 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module)
     if (!data)
         return NULL;
 
-    cout << "sdfRefToNode: " << data->getName() << endl;
+    cout << "sdfRefToNode: " << data->getName() << node->nodetype << endl;
 
     // getSimpType returns the type of the ref if there is one
     jsonDataType refType = data->getSimpType();
     sdfData *ref = dynamic_cast<sdfData*>(data->getReference());
     sdfData *propRef = dynamic_cast<sdfProperty*>(data->getReference());
 
-    for (int i = 0; i < nodeStore.size(); i++)
+    int size = nodeStore.size();
+    for (int i = 0; i < size; i++)
     {
-        cout << nodeStore[i]->name << " " << nodeStore[i]->nodetype << endl;
+        //cout << i << "/" << size << endl;
+        //cout << nodeStore[i]->name << " " << nodeStore[i]->nodetype << endl;
         if (ref && nodeStore[i]
                 && pathsToNodes[ref->generateReferenceString()]
                                 == nodeStore[i].get())
@@ -2147,58 +2151,67 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module)
                 shared_ptr<lys_node_uses> uses =
                         shared_ptr<lys_node_uses>(new lys_node_uses());
                 uses->nodetype = LYS_USES;
-                // TODO: refine? do assignment somewhere else?
 
                 shared_ptr<lys_node_grp> grp(new lys_node_grp());
-                shared_ptr<lys_node_list> refNode(
-                        new lys_node_list((lys_node_list&)*nodeStore[i]));
 
                 cout << "   type list" << endl;
-                //lys_node *child2 = new lys_node(*nodeStore[i]->child);
-                lys_node *child2 = nodeStore[i]->child;
-                while (child2)
+
+                // !!! keep in case this should be done differently again
+                /*lys_node *child = nodeStore[i]->child;
+                addNode(*child, (lys_node&)*grp, module);
+                while (child->next)
                 {
-                    child2->parent = (lys_node*)refNode.get();
-                    child2 = child2->next;
+                    child = child->next;
+                    child->parent = (lys_node*)grp.get();
                 }
-                //nodeStore[i]->child = NULL;
-                refNode->next = NULL;
-                addNode((lys_node&)*refNode, (lys_node&)*grp.get(), module);
-                grp->name = refNode->name;
+                nodeStore[i]->child = NULL;*/
+                addNode((lys_node&)*grp, *nodeStore[i]->parent, module);
+                removeNode(*nodeStore[i]);
+                addNode(*nodeStore[i], (lys_node&)*grp, module);
+
+                grp->name = nodeStore[i]->name;
                 grp->nodetype = LYS_GROUPING;
-                addNode((lys_node&)*grp, module);
                 uses->grp = grp.get();
                 uses->name = uses->grp->name;
 
-                //node = (lys_node*)uses.get();
+                //addNode((lys_node&)*uses, *node, module);
+                if (node->parent)
+                    addNode(*storeNode((shared_ptr<lys_node>&)uses),
+                            *node->parent, module);
+                else if (node->module)
+                    addNode(*storeNode((shared_ptr<lys_node>&)uses),
+                            *node->module);
+                else
+                    cerr << "sdfRefToNode: node must have a module" << endl;
 
                 // Replace the node that the grouping was copied from
                 // by a uses to that grouping
                 shared_ptr<lys_node_uses> uses2(new lys_node_uses(
                         *uses.get()));
-                if (nodeStore[i]->parent)
-                    addNode((lys_node&)*uses2, *nodeStore[i]->parent,
-                        module);
-                else if (nodeStore[i]->module)
-                    addNode((lys_node&)*uses2, module);
+                addNode((lys_node&)*uses2, *grp->parent, module);
 
-                cout << nodeStore[i]->name << endl;
-                removeNode(*nodeStore[i]);
+                // TODO: refine
+                uses->refine = new lys_refine();
+                uses->refine->module = &module;
+                uses->refine->target_name = grp->child->name;
+                uses->refine->target_type = grp->child->nodetype;
+                string dsc = avoidNull(node->name) + "\n"
+                        + avoidNull(node->dsc);
+                uses->refine->dsc = storeString(dsc);
+                uses->refine->mod.list.min = ((lys_node_list*)node)->min;
+                uses->refine->mod.list.max = ((lys_node_list*)node)->max;
+                if (uses->refine->mod.list.min != 0)
+                    uses->refine->flags += LYS_RFN_MINSET;
+                if (uses->refine->mod.list.max != 0)
+                    uses->refine->flags += LYS_RFN_MAXSET;
+                uses->refine_size = 1;
+                removeNode(*node);
 
-//                cout << "erased " <<
-//                        avoidNull((nodeStore.begin()+i)->get()->name) << endl;
-//                nodeStore.erase(nodeStore.begin()+i);
-//                pathsToNodes[ref->generateReferenceString()] =
-//                        (lys_node*)grp.get();
-                // TODO: what if a list is used twice with sdfRef?
-                // what about the nodes that are now added to nodeStore?
-
-                //nodeStore[i] = NULL;
-
+                pathsToNodes[ref->generateReferenceString()] =
+                        (lys_node*)grp.get();
                 storeNode((shared_ptr<lys_node>&)grp);
                 storeNode((shared_ptr<lys_node>&)uses2);
-                storeNode((shared_ptr<lys_node>&)refNode);
-                node = storeNode((shared_ptr<lys_node>&)uses);
+                storeNode((shared_ptr<lys_node>&)uses);
             }
             else if (nodeStore[i]->nodetype == LYS_GROUPING)
             {
@@ -2207,10 +2220,42 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module)
                 shared_ptr<lys_node_uses> uses =
                         shared_ptr<lys_node_uses>(new lys_node_uses());
                 uses->nodetype = LYS_USES;
-                // TODO: refine? do assignment somewhere else?
                 uses->grp = (lys_node_grp*)nodeStore[i].get();
                 uses->name = uses->grp->name;
-                node = storeNode((shared_ptr<lys_node>&)uses);
+                //node = storeNode((shared_ptr<lys_node>&)uses);
+                uses->refine = new lys_refine();
+                uses->refine->module = &module;
+                uses->refine->target_name = uses->grp->child->name;
+                uses->refine->target_type = uses->grp->child->nodetype;
+                string dsc = avoidNull(node->name) + "\n"
+                        + avoidNull(node->dsc);
+                uses->refine->dsc = storeString(dsc);
+                if (uses->grp->child->nodetype == LYS_LIST)
+                {
+                    if (node->parent)
+                        addNode(*storeNode((shared_ptr<lys_node>&)uses),
+                                *node->parent, module);
+                    else if (node->module)
+                        addNode(*storeNode((shared_ptr<lys_node>&)uses),
+                                *node->module);
+                    else
+                        cerr << "sdfRefToNode: node must have a module" << endl;
+
+                    // TODO: refine
+                    uses->refine->mod.list.min = ((lys_node_list*)node)->min;
+                    uses->refine->mod.list.max = ((lys_node_list*)node)->max;
+                    if (uses->refine->mod.list.min != 0)
+                        uses->refine->flags += LYS_RFN_MINSET;
+                    if (uses->refine->mod.list.max != 0)
+                        uses->refine->flags += LYS_RFN_MAXSET;
+                    uses->refine_size = 1;
+                    removeNode(*node);
+                    cout << uses->refine->mod.list.max<< endl;
+                    cout << "alskdfj "<< uses->refine->target_type<<endl;
+                }
+                else
+                    addNode(*storeNode((shared_ptr<lys_node>&)uses), *node,
+                            module);
             }
             break;
         }
@@ -2427,7 +2472,11 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
         cerr << "sdfDataToNode: sdfData element must not be NULL" << endl;
         return NULL;
     }
-    // type object
+    sdfData *itemConstrWithRefs = data->getItemConstrOfRefs();
+    sdfData *ref = data->getSdfDataReference();
+
+
+    // type object -> container
     if (data->getSimpType() == json_object)
     {
         shared_ptr<lys_node_container> cont =
@@ -2447,32 +2496,47 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
         node = storeNode((shared_ptr<lys_node>&)cont);
     }
 
-    // type array with objects of type object
+    // type array with objects of type object -> list
     else if (data->getSimpType() == json_array
-            && data->getItemConstr()
-               && data->getItemConstr()->getSimpType() == json_object)
+                && itemConstrWithRefs
+                && itemConstrWithRefs->getSimpType() == json_object)
     {
         cout << "list " << data->getName() << endl;
         shared_ptr<lys_node_list> list =
                 shared_ptr<lys_node_list>(new lys_node_list());
         list->nodetype = LYS_LIST;
-        list->min = data->getMinItems();
-        list->max = data->getMaxItems();
+//        list->min = data->getMinItems();
+//        list->max = data->getMaxItems();
+        // TODO: do this? this is only done because of the way
+        // sdfRefs to arrays with object items are translated into lists
+        list->min = data->getMinItemsOfRef();
+        list->max = data->getMaxItemsOfRef();
 
         lys_node *childNode;
-        vector<sdfData*> properties = data->getItemConstr()->getObjectProperties();
-        for (int i = 0; i < properties.size(); i++)
+        if (data->getItemConstr())
         {
-            childNode = sdfDataToNode(properties[i], childNode, module);
-            addNode(*childNode, (lys_node&)*list, module);
+            vector<sdfData*> properties =
+                    data->getItemConstr()->getObjectProperties();
+            for (int i = 0; i < properties.size(); i++)
+            {
+                childNode = sdfDataToNode(properties[i], childNode, module);
+                addNode(*childNode, (lys_node&)*list, module);
+            }
         }
         node = storeNode((shared_ptr<lys_node>&)list);
     }
 
-    // type array with objects of type int, number, string or bool
+    // type array with objects of type int, number, string or bool -> leaflist
+    /*else if (data->getSimpType() == json_array
+            && ((!data->getItemConstr()
+               || data->getItemConstr()->getSimpType() != json_object)
+               || (data->getSdfDataReference()
+                       && (!data->getSdfDataReference()->getItemConstr()
+                               || data->getSdfDataReference()->getItemConstr()
+                               ->getSimpType() != json_object))))*/
     else if (data->getSimpType() == json_array
-            && (!data->getItemConstr()
-               || data->getItemConstr()->getSimpType() != json_object))
+            && (!itemConstrWithRefs
+                    || itemConstrWithRefs->getSimpType() != json_object))
     {
         cout << "leaflist " << data->getName() << endl;
         shared_ptr<lys_node_leaflist> leaflist =
@@ -2536,7 +2600,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     /*if (node->parent->nodetype == LYS_CONTAINER
             || node->parent->nodetype == LYS_LIST
             || node->parent->nodetype == LYS_CASE)
-    */{
+    */{ //TODO: what about sdfRef here?
         shared_ptr<lys_node_choice> choice =
                 //shared_ptr<lys_node_choice>(new lys_node_choice());
                 make_shared<lys_node_choice>((lys_node_choice&)*node);
@@ -2584,8 +2648,10 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     pathsToNodes[data->generateReferenceString()] = node;
 
     if (data->getReference())
-//        node = sdfRefToNode(data, node, module);
+    {
+        //        node = sdfRefToNode(data, node, module);
         openRefs.push_back(tuple<sdfData*, lys_node*>{data, node});
+    }
 
     return node;
 }
@@ -2649,9 +2715,9 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     //    cerr << "Error: memory could not be allocated" << endl;
     for (sdfData *i : object.getDatatypes())
     {
-        if (i->getObjectProperties().empty() && !i->getItemConstr()
-                && i->getSimpType() != json_object &&
-                i->getSimpType() != json_array)
+        if (i->getObjectPropertiesOfRefs().empty() && !i->getItemConstrOfRefs()
+                && i->getSimpType() != json_object
+                && i->getSimpType() != json_array)
         {
             //sdfDataToTypedef(i, &module.tpdf[cnt]);
             //module.tpdf[cnt].module = &module;
@@ -2674,13 +2740,30 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
         {
             shared_ptr<lys_node_grp> grp =
                     shared_ptr<lys_node_grp>(new lys_node_grp());
+            lys_node *child  = sdfDataToNode(i, child, module);
+
+            // the following is discarded for now
+            // (not putting a whole list into the grouping but instead putting
+            // the nodes of the list into a grouping)--------
+            /*if (child->nodetype == LYS_LIST)
+            {
+                *grp = (lys_node_grp&)*child;
+                if (i->getReference())
+                    openRefs.push_back(tuple<sdfData*, lys_node*>{
+                        i, (lys_node*)grp.get()
+                });
+            }
+            else*/
+            if (child->nodetype == LYS_CONTAINER)
+                grp = make_shared<lys_node_grp>((lys_node_grp&)*child);
+            else
+                addNode(*child, (lys_node&)*grp, module);
+
             grp->nodetype = LYS_GROUPING;
             grp->name = i->getNameAsArray();
-            grp->module = &module;
-            grp->prev = (lys_node*)grp.get();
-            lys_node *child  = sdfDataToNode(i, child, module);
-            addNode(*child, (lys_node&)*grp, module);
+
             addNode(*storeNode((shared_ptr<lys_node>&)grp), module);
+            pathsToNodes[i->generateReferenceString()] = (lys_node*)grp.get();
         }
     }
     module.tpdf_size = cnt;
@@ -3056,6 +3139,9 @@ int main(int argc, const char** argv)
         cout << "Converting SDF model to YANG ";
         const lys_module *const_module = const_cast<lys_module*>(&module);
         cout << "-> finished" << endl;
+
+        cout << module.data->next->next->child->name << endl;
+        cout << ((lys_node_uses*)module.data->next->next->child)->refine->mod.list.min << endl;
 
         cout << "Printing to file " << outputFileString;
         lys_print_path(outputFileName, const_module, LYS_OUT_YANG, NULL, 0, 0);
