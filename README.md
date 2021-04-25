@@ -48,8 +48,6 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |import|Translate the module that the import references (elements can now be referenced by sdfRef)|done|
 |when/must|Mentioned in the description|(done)|JSON<->XPATH query language in progress|
 
-\* please note that *property* is not the same as sdfProperty and *type object* is not the same as sdfObject
-
 
 ## Conversion table SDF->YANG
 
@@ -72,6 +70,10 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |sdfData (type object (compound-type))|grouping with container|done|
 |sdfRef (to sdfData of type integer/number/boolean/string|type is set to the typedef corresponding to the sdfData element|done|
 |sdfRef (to sdfProperty of type integer/number/boolean/string or array with items of the aforementioned types)|leafref|done|
-|sdfRef (to sdfData of type array/object)|uses (and refine if necessary)|If a grouping that contains the corresponding container/list is is used by a node the node will get a child node of the container/list. It would be better if the node would *become* the container/list but a grouping cannot represent a list directly.|
-|sdfRef (to sdfProperty of type object or type array with items of type object)|uses (and refine if necessary) (create a grouping for the container that the sdfProperty was translated to)|see above|
+|sdfRef (to sdfData of type object)|uses (and refine if necessary)|done||
+|sdfRef (to sdfData of type array with items of type object (compound-type))|uses (and refine if necessary) that replaces the node corresponding to the element the sdfRef belongs to|done|Refines relate to the node type of the refined node. If sdfRef references an sdfData element that also contains an sdfRef the translation will be a uses of a grouping with a uses. If an sdfRef to an sdfData element with another sdfRef is refined with a minItems statement for example that cannot be tranlated directly since uses nodes do not have the min-elements statement.|
+|sdfRef (to sdfProperty of type object)|Uses (and refine if necessary). Create a grouping that replaces the container the sdfProperty was translated to.|done||
+|sdfRef (to sdfProperty of type array with items of type object)|Uses (and refine if necessary) that replaces the node corresponding to the element the sdfRef belongs to. Create a grouping containing the list that the sdfProperty was translated to.|done|see above|
 |sdfChoice|choice with one case for each element of the sdfChoice; each element is translated like a sdfProperty|done|If the sdfChoice only contains different types it could also be translated to YANG type union (of those different types). YANG choices can only have default cases, so how should default values of simple types be translated?|
+
+\* please note that *property* is not the same as sdfProperty and *type object* is not the same as sdfObject
