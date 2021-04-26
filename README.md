@@ -53,14 +53,14 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 
 |SDF statement|translated to YANG|done?|problems/remarks|
 |-|-|-|-|
-|sdfProduct|module on highest level, container otherwise|Will sdfProduct even exist in future SDF versions?|
+|sdfProduct|module on highest level, container otherwise||Will sdfProduct even exist in future SDF versions?|
 |sdfThing|module on highest level, container otherwise|
 |sdfObject|module on highest level, container otherwise|done||
 |sdfProperty (type integer/number/boolean/string)|leaf|done|
 |sdfProperty (type array with items of type integer/number/boolean/string)|leaf-list|done|When the resulting leaf-list has one or more default values the libyang parser complains although I think that should be valid.|
 |sdfProperty (type array with items of type object (compound-type))|list|done|
 |sdfProperty (type object (compound-type))|container|done|
-|sdfAction (of a sdfObject that is __not__ part of a sdfThing)|RPC|
+|sdfAction (of a sdfObject that is __not__ part of a sdfThing)|RPC|done||
 |sdfAction (of a sdfObject that __is__ part of a sdfThing)|action of corresponding container|
 |sdfEvent|notification|
 |sdfInputData/sdfOutputData|input/output translated like sdfProperty|

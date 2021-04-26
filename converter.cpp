@@ -2074,8 +2074,6 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module)
     if (!data)
         return NULL;
 
-    cout << "sdfRefToNode: " << data->getName() << " " << node->nodetype << endl;
-
     // getSimpType returns the type of the ref if there is one
     jsonDataType refType = data->getSimpType();
     sdfData *ref = dynamic_cast<sdfData*>(data->getReference());
@@ -2090,13 +2088,10 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module)
                 && pathsToNodes[ref->generateReferenceString()]
                                 == nodeStore[i].get())
         {
-            cout << ref->generateReferenceString() << endl;
-
             if (nodeStore[i]->nodetype == LYS_LEAF
                     || nodeStore[i]->nodetype == LYS_LEAFLIST)
             {
                 // leafref
-                cout << "   type leaf(list)" << endl;
                 // TODO: transfer contents of info to refine statement
                 lys_type type = {};
                 type.parent = ((lys_node_leaf*)node)->type.parent;
@@ -2124,7 +2119,6 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module)
                 shared_ptr<lys_node_grp> grp(new lys_node_grp());
                 shared_ptr<lys_node_uses> uses2;
                 shared_ptr<lys_node> refNode;
-                cout << "   type container" << endl;
 
                 grp = shared_ptr<lys_node_grp>(new lys_node_grp(
                         (lys_node_grp&)*nodeStore[i].get()));
@@ -2151,8 +2145,6 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module)
                 uses->nodetype = LYS_USES;
 
                 shared_ptr<lys_node_grp> grp(new lys_node_grp());
-
-                cout << "   type list" << endl;
 
                 // !!! keep in case this should be done differently again
                 /*lys_node *child = nodeStore[i]->child;
@@ -2238,7 +2230,6 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module)
             else if (nodeStore[i]->nodetype == LYS_GROUPING)
             {
                 // uses
-                cout << "   type grouping" << endl;
                 shared_ptr<lys_node_uses> uses =
                         shared_ptr<lys_node_uses>(new lys_node_uses());
                 uses->nodetype = LYS_USES;
@@ -2301,7 +2292,6 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module)
         if (ref && pathsToNodes[ref->generateReferenceString()]
                                 == (lys_node*)&tpdfStore[i])
         {
-            cout << ref->getName() << " type typedef" << endl;
             lys_type type = {};
             type.parent = ((lys_node_leaf*)node)->type.parent;
             type.base = LY_TYPE_DER;
@@ -2372,6 +2362,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     // type object -> container
     if (data->getSimpType() == json_object)
     {
+        cout << "container " << data->getName() << endl;
         shared_ptr<lys_node_container> cont =
                 shared_ptr<lys_node_container>(new lys_node_container());
         //lys_node_container *cont = new lys_node_container();
@@ -2381,7 +2372,6 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
         vector<sdfData*> properties = data->getObjectProperties();
         for (int i = 0; i < properties.size(); i++)
         {
-            //childNode = NULL;//new lys_node();
             childNode = sdfDataToNode(properties[i], childNode, module);
             // add the current node into the tree
             addNode(*childNode, (lys_node&)*cont, module);
@@ -2534,8 +2524,6 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
             // Put default into each case
         }
     }
-
-
 
     if (!node->name)
         node->name = data->getNameAsArray();
@@ -2706,9 +2694,72 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
         addNode(*currentNode, (lys_node&)*propsCont, module);
     }
 
-    for (sdfAction *i : object.getActions())
+    vector<sdfAction*> actions = object.getActions();
+    sdfAction *i;
+    //for (sdfAction *i : object.getActions())
+    for (int j = 0; j < actions.size(); j++)
     {
+        i = actions[j];
+        cout << "action!!! " << i->getName() << endl;
+        shared_ptr<lys_node_rpc_action> action(new lys_node_rpc_action());
+        action->name = storeString(i->getName());
+        action->dsc = storeString(i->getDescription());
 
+        if (object.getParentThing())
+            action->nodetype = LYS_ACTION;
+        else
+            action->nodetype = LYS_RPC;
+
+        shared_ptr<lys_node_inout> input(new lys_node_inout());
+        input->nodetype = LYS_INPUT;
+        storeNode((shared_ptr<lys_node>&)input);
+        addNode((lys_node&)*input, (lys_node&)*action, module);
+
+        sdfData *inData = i->getInputData();
+        if (inData)
+        {
+            lys_node *inputChild = sdfDataToNode(inData, inputChild, module);
+            if(inputChild->nodetype == LYS_CONTAINER)
+            {
+                input->child = inputChild->child;
+                for (lys_node *sib = input->child; sib; sib = sib->next)
+                    sib->parent = (lys_node*)input.get();
+            }
+            else
+            {
+                inputChild->name = "input";
+                addNode(*inputChild, (lys_node&)*input, module);
+            }
+        }
+        else
+            input->flags |= LYS_IMPLICIT;
+
+        shared_ptr<lys_node_inout> output(new lys_node_inout());
+        output->nodetype = LYS_OUTPUT;
+        storeNode((shared_ptr<lys_node>&)output);
+        addNode((lys_node&)*output, (lys_node&)*action, module);
+
+        sdfData *outData = i->getOutputData();
+        if (outData)
+        {
+            lys_node *outputChild = sdfDataToNode(outData, outputChild, module);
+            if(outputChild->nodetype == LYS_CONTAINER)
+            {
+                output->child = outputChild->child;
+                for (lys_node *sib = output->child; sib; sib = sib->next)
+                    sib->parent = (lys_node*)output.get();
+            }
+            else
+            {
+                outputChild->name = "output";
+                addNode(*outputChild, (lys_node&)*output, module);
+            }
+        }
+        else
+            output->flags |= LYS_IMPLICIT;
+
+        storeNode((shared_ptr<lys_node>&)action);
+        addNode((lys_node&)*action, module);
     }
 
     for (sdfEvent *i : object.getEvents())
@@ -2727,7 +2778,6 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     {
         tie(d, n) = openRefs[i];
         n = sdfRefToNode(d, n, module);
-        cout << n->nodetype << endl;
     }
 /*
     // assign typedef pointers to types
