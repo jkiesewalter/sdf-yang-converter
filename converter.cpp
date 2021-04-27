@@ -5,6 +5,7 @@
 #include <string>
 #include <cstring>
 #include <regex>
+#include <limits>
 #include <memory>
 #include <math.h>
 #include <ctype.h>
@@ -15,8 +16,8 @@
 #include "sdf.hpp"
 
 // TODO: are these the correct numbers?
-#define MAX_NUM 3.4e+38 // maximal float
-#define MAX_INT 2147483647 // maximal integer (64)
+#define MAX_NUM numeric_limits<float>::max() // maximal float
+#define MAX_INT numeric_limits<int>::max() // maximal integer (64)
 #define JSON_MAX_STRING_LENGTH 2097152 // maximal length of a json string
 
 // for convenience
