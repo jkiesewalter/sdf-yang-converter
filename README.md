@@ -62,8 +62,10 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |sdfProperty (type object (compound-type))|container|done|
 |sdfAction (of a sdfObject that is __not__ part of a sdfThing)|RPC|done||
 |sdfAction (of a sdfObject that __is__ part of a sdfThing)|action of corresponding container|
-|sdfEvent|notification|
-|sdfInputData/sdfOutputData|input/output translated like sdfProperty|
+|sdfEvent with sdfOutputData of type integer/number/boolean/string/array|notification with child nodes that were translated like sdfProperty|done||
+|sdfEvent with sdfOutputData of type object|notification with child nodes corresponding to the object properties\* (translated like sdfProperty)|done||
+|sdfInputData/sdfOutputData (type integer/number/boolean/string/array) of an sdfAction|input/output with child nodes that were translated like sdfProperty|done||
+|sdfInputData/sdfOutputData (type object) of an sdfAction|input/output with child nodes corresponding to the object properties\* (translated like sdfProperty) |done||
 |sdfData (type integer/number/boolean/string)|typedef|done|
 |sdfData (type array with items of type integer/number/boolean/string)|grouping with leaf-list|done|
 |sdfData (type array with items of type object (compound-type))|grouping  with list|done|
@@ -76,4 +78,4 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |sdfRef (to sdfProperty of type array with items of type object)|Uses (and refine if necessary) that replaces the node corresponding to the element the sdfRef belongs to. Create a grouping containing the list that the sdfProperty was translated to.|done|see above|
 |sdfChoice|choice with one case for each element of the sdfChoice; each element is translated like a sdfProperty|done|If the sdfChoice only contains different types it could also be translated to YANG type union (of those different types). YANG choices can only have default cases, so how should default values of simple types be translated?|
 
-\* please note that *property* is not the same as sdfProperty and *type object* is not the same as sdfObject
+\* please note that an *(object) property* is not the same as sdfProperty and *type object* is not the same as sdfObject

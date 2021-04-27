@@ -2362,7 +2362,6 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     // type object -> container
     if (data->getSimpType() == json_object)
     {
-        cout << "container " << data->getName() << endl;
         shared_ptr<lys_node_container> cont =
                 shared_ptr<lys_node_container>(new lys_node_container());
         //lys_node_container *cont = new lys_node_container();
@@ -2384,7 +2383,6 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
                 && itemConstrWithRefs
                 && itemConstrWithRefs->getSimpType() == json_object)
     {
-        cout << "list " << data->getName() << endl;
         shared_ptr<lys_node_list> list =
                 shared_ptr<lys_node_list>(new lys_node_list());
         list->nodetype = LYS_LIST;
@@ -2425,7 +2423,6 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
             && (!itemConstrWithRefs
                     || itemConstrWithRefs->getSimpType() != json_object))
     {
-        cout << "leaflist " << data->getName() << endl;
         shared_ptr<lys_node_leaflist> leaflist =
                 shared_ptr<lys_node_leaflist>(new lys_node_leaflist());
         leaflist->nodetype = LYS_LEAFLIST;
@@ -2547,6 +2544,81 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     return node;
 }
 
+void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
+{
+    shared_ptr<lys_tpdf[]> tpdfs(
+            new lys_tpdf[module.tpdf_size + datatypes.size()]());
+
+    // transfer the contents of the existing tpdf array
+    for (int i = 0; i < module.tpdf_size; i++)
+        tpdfs[i] = module.tpdf[i];
+
+    uint16_t cnt = module.tpdf_size;
+    voidPointerStore.push_back(tpdfs);
+
+    sdfData *data;
+    for (int i = 0; i < datatypes.size(); i++)
+    {
+        data = datatypes[i];
+        if (data->getObjectPropertiesOfRefs().empty()
+                && !data->getItemConstrOfRefs()
+                && data->getSimpType() != json_object
+                && data->getSimpType() != json_array)
+        {
+            //sdfDataToTypedef(i, &module.tpdf[cnt]);
+            //module.tpdf[cnt].module = &module;
+            //tpdfStore.push_back(module.tpdf[cnt]);
+
+            tpdfs[cnt] = {};
+            sdfDataToTypedef(data, &tpdfs[cnt]);
+            tpdfs[cnt].module = &module;
+            //module.tpdf[cnt] = *storeTypedef(tpdf);
+            /*
+            lys_tpdf tpdf = {};
+            sdfDataToTypedef(i, &tpdf);
+            tpdf.module = &module;
+            module.tpdf[cnt] = *storeTypedef(tpdf);
+            */
+            cnt++;
+        }
+        // else create a grouping
+        else
+        {
+            shared_ptr<lys_node_grp> grp =
+                    shared_ptr<lys_node_grp>(new lys_node_grp());
+            lys_node *child  = sdfDataToNode(data, child, module);
+
+            // the following is discarded for now
+            // (not putting a whole list into the grouping but instead putting
+            // the nodes of the list into a grouping)--------
+            /*if (child->nodetype == LYS_LIST)
+            {
+                *grp = (lys_node_grp&)*child;
+                if (i->getReference())
+                    openRefs.push_back(tuple<sdfData*, lys_node*>{
+                        i, (lys_node*)grp.get()
+                });
+            }
+            else*/
+            if (child->nodetype == LYS_CONTAINER)
+                grp = make_shared<lys_node_grp>((lys_node_grp&)*child);
+            else
+                addNode(*child, (lys_node&)*grp, module);
+
+            grp->nodetype = LYS_GROUPING;
+            grp->name = data->getNameAsArray();
+
+            addNode(*storeNode((shared_ptr<lys_node>&)grp), module);
+            pathsToNodes[data->generateReferenceString()] =
+                    (lys_node*)grp.get();
+        }
+    }
+
+    // TODO: should the typedef always be on top-level so it can be reached
+    // from everywhere (scoping)?
+    module.tpdf = tpdfs.get();
+    module.tpdf_size = cnt;
+}
 
 struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 {
@@ -2596,68 +2668,8 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
             sizeof(module.rev[0].date));
     module.rev_size = 1;
 
-    uint16_t cnt = 0;
-    // TODO: this causes a memory leak
-    //module.tpdf = new lys_tpdf[object.getDatatypes().size()]();
-    shared_ptr<lys_tpdf[]> tpdfs(new lys_tpdf[object.getDatatypes().size()]());
-    voidPointerStore.push_back(tpdfs);
-    module.tpdf = tpdfs.get();
-    //if (module.tpdf == nullptr)
-    //    cerr << "Error: memory could not be allocated" << endl;
-    for (sdfData *i : object.getDatatypes())
-    {
-        if (i->getObjectPropertiesOfRefs().empty() && !i->getItemConstrOfRefs()
-                && i->getSimpType() != json_object
-                && i->getSimpType() != json_array)
-        {
-            //sdfDataToTypedef(i, &module.tpdf[cnt]);
-            //module.tpdf[cnt].module = &module;
-            //tpdfStore.push_back(module.tpdf[cnt]);
-
-            module.tpdf[cnt] = {};
-            sdfDataToTypedef(i, &module.tpdf[cnt]);
-            module.tpdf[cnt].module = &module;
-            //module.tpdf[cnt] = *storeTypedef(tpdf);
-            /*
-            lys_tpdf tpdf = {};
-            sdfDataToTypedef(i, &tpdf);
-            tpdf.module = &module;
-            module.tpdf[cnt] = *storeTypedef(tpdf);
-            */
-            cnt++;
-        }
-        // else create a grouping
-        else
-        {
-            shared_ptr<lys_node_grp> grp =
-                    shared_ptr<lys_node_grp>(new lys_node_grp());
-            lys_node *child  = sdfDataToNode(i, child, module);
-
-            // the following is discarded for now
-            // (not putting a whole list into the grouping but instead putting
-            // the nodes of the list into a grouping)--------
-            /*if (child->nodetype == LYS_LIST)
-            {
-                *grp = (lys_node_grp&)*child;
-                if (i->getReference())
-                    openRefs.push_back(tuple<sdfData*, lys_node*>{
-                        i, (lys_node*)grp.get()
-                });
-            }
-            else*/
-            if (child->nodetype == LYS_CONTAINER)
-                grp = make_shared<lys_node_grp>((lys_node_grp&)*child);
-            else
-                addNode(*child, (lys_node&)*grp, module);
-
-            grp->nodetype = LYS_GROUPING;
-            grp->name = i->getNameAsArray();
-
-            addNode(*storeNode((shared_ptr<lys_node>&)grp), module);
-            pathsToNodes[i->generateReferenceString()] = (lys_node*)grp.get();
-        }
-    }
-    module.tpdf_size = cnt;
+    // convert datatypes to typedefs or groupings
+    convertDatatypes(object.getDatatypes(), module);
 
     lys_node_container props = {
             .name = "properties",
@@ -2700,7 +2712,6 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     for (int j = 0; j < actions.size(); j++)
     {
         i = actions[j];
-        cout << "action!!! " << i->getName() << endl;
         shared_ptr<lys_node_rpc_action> action(new lys_node_rpc_action());
         action->name = storeString(i->getName());
         action->dsc = storeString(i->getDescription());
@@ -2709,6 +2720,8 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
             action->nodetype = LYS_ACTION;
         else
             action->nodetype = LYS_RPC;
+
+        convertDatatypes(i->getDatatypes(), module);
 
         shared_ptr<lys_node_inout> input(new lys_node_inout());
         input->nodetype = LYS_INPUT;
@@ -2762,9 +2775,37 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
         addNode((lys_node&)*action, module);
     }
 
-    for (sdfEvent *i : object.getEvents())
+    vector<sdfEvent*> events = object.getEvents();
+    sdfEvent *event;
+    for (int i = 0; i < events.size(); i++)
     {
+        event = events[i];
+        shared_ptr<lys_node_notif> notif(new lys_node_notif());
+        notif->name = storeString(event->getName());
+        notif->dsc = storeString(event->getDescription());
+        notif->nodetype = LYS_NOTIF;
 
+        convertDatatypes(event->getDatatypes(), module);
+
+        sdfData *outData = event->getOutputData();
+        if (outData)
+        {
+            lys_node *outputChild = sdfDataToNode(outData, outputChild, module);
+            if (outputChild->nodetype == LYS_CONTAINER)
+            {
+                notif->child = outputChild->child;
+                for (lys_node *sib = notif->child; sib; sib = sib->next)
+                    sib->parent = (lys_node*)notif.get();
+            }
+            else
+            {
+                outputChild->name = "output";
+                addNode(*outputChild, (lys_node&)*notif, module);
+            }
+        }
+
+        storeNode((shared_ptr<lys_node>&)notif);
+        addNode((lys_node&)*notif, module);
     }
 
     for (sdfCommon *i : object.getRequired())

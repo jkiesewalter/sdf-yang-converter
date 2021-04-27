@@ -2124,6 +2124,7 @@ sdfEvent* sdfEvent::jsonToEvent(json input)
             for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
             {
                 sdfData *childData = new sdfData();
+                childData->setName(correctValue(jt.key()));
                 this->addDatatype(childData);
                 childData->jsonToData(input["sdfData"][jt.key()]);
             }
@@ -2173,6 +2174,7 @@ sdfAction* sdfAction::jsonToAction(json input)
             for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
             {
                 sdfData *childData = new sdfData();
+                childData->setName(correctValue(jt.key()));
                 this->addDatatype(childData);
                 childData->jsonToData(input["sdfData"][jt.key()]);
             }
