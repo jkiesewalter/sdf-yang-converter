@@ -8,6 +8,7 @@ json-schema-validator/
 *.o
 *.sdf.json
 *.yang
+converter
 .cproject
 .project
 .settings/

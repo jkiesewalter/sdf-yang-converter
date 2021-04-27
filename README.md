@@ -77,5 +77,6 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |sdfRef (to sdfProperty of type object)|Uses (and refine if necessary). Create a grouping that replaces the container the sdfProperty was translated to.|done||
 |sdfRef (to sdfProperty of type array with items of type object)|Uses (and refine if necessary) that replaces the node corresponding to the element the sdfRef belongs to. Create a grouping containing the list that the sdfProperty was translated to.|done|see above|
 |sdfChoice|choice with one case for each element of the sdfChoice; each element is translated like a sdfProperty|done|If the sdfChoice only contains different types it could also be translated to YANG type union (of those different types). YANG choices can only have default cases, so how should default values of simple types be translated?|
+|sdfRequired|Set the mandatory statement of the corresponding leaf/choice (which are the only nodes that can be marked as mandatory). If the corresponding node is not a leaf/choice make all of the nodes decendant leafs/choices mandatory|||
 
 \* please note that an *(object) property* is not the same as sdfProperty and *type object* is not the same as sdfObject
