@@ -42,7 +42,7 @@ vector<lys_revision> revStore;
 vector<shared_ptr<lys_node>> nodeStore;
 map<string, lys_node*> pathsToNodes; // sdfRef paths for nodes
 vector<tuple<sdfData*, lys_node*>> openRefs; // sdfRefs still open for nodes
-vector<tuple<sdfData*, lys_node*>> openRefsTpdf; // sdfRefs still open for tpdfs
+vector<tuple<sdfData*, lys_tpdf*>> openRefsTpdf; // sdfRefs still open for tpdfs
 vector<lys_tpdf> tpdfStore;
 vector<lys_restr> restrStore;
 vector<shared_ptr<void>> voidPointerStore;
@@ -141,7 +141,7 @@ lys_restr* storeRestriction(lys_restr restr)
     return &restrStore.back();
 }
 
-lys_tpdf* storeTypedef(lys_tpdf tpdf)
+lys_tpdf* storeTypedef(lys_tpdf &tpdf)
 {
     //cout << stringStore.size() << "/"<<stringStore.capacity();
     if (tpdfStore.size() == tpdfStore.max_size())
@@ -2167,12 +2167,6 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                 removeNode(*nodeStore[i]);
                 addNode(*nodeStore[i], (lys_node&)*grp, module);
 
-                vector<lys_node_leaf*> l(1);
-                ((lys_node_list*)nodeStore[i].get())->keys_size = 1;
-                ((lys_node_list*)nodeStore[i].get())->keys = l.data();
-                ((lys_node_list*)nodeStore[i].get())->keys[1] =
-                        (lys_node_leaf*)nodeStore[i]->child;
-
                 grp->name = nodeStore[i]->name;
                 grp->nodetype = LYS_GROUPING;
                 uses->grp = grp.get();
@@ -2209,7 +2203,10 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
 
                 // TODO: augment for additional object properties? is that
                 // even possible?
-                uses->refine = new lys_refine();
+                shared_ptr<lys_refine> refine(new lys_refine());
+                voidPointerStore.push_back((shared_ptr<void>)refine);
+                uses->refine = refine.get();
+                //uses->refine = new lys_refine();
                 uses->refine->module = &module;
                 uses->refine->target_name = grp->child->name;
                 uses->refine->target_type = grp->child->nodetype;
@@ -2219,9 +2216,9 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                 uses->refine->mod.list.min = ((lys_node_list*)node)->min;
                 uses->refine->mod.list.max = ((lys_node_list*)node)->max;
                 if (uses->refine->mod.list.min != 0)
-                    uses->refine->flags += LYS_RFN_MINSET;
+                    uses->refine->flags |= LYS_RFN_MINSET;
                 if (uses->refine->mod.list.max != 0)
-                    uses->refine->flags += LYS_RFN_MAXSET;
+                    uses->refine->flags |= LYS_RFN_MAXSET;
                 uses->refine_size = 1;
 
                 removeNode(*node);
@@ -2241,7 +2238,10 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                 uses->grp = (lys_node_grp*)nodeStore[i].get();
                 uses->name = uses->grp->name;
                 //node = storeNode((shared_ptr<lys_node>&)uses);
-                uses->refine = new lys_refine();
+                shared_ptr<lys_refine> refine(new lys_refine());
+                voidPointerStore.push_back((shared_ptr<void>)refine);
+                uses->refine = refine.get();
+                //uses->refine = new lys_refine();
                 uses->refine->module = &module;
                 uses->refine->target_name = uses->grp->child->name;
                 uses->refine->target_type = uses->grp->child->nodetype;
@@ -2279,9 +2279,9 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                     uses->refine->mod.list.min = ((lys_node_list*)node)->min;
                     uses->refine->mod.list.max = ((lys_node_list*)node)->max;
                     if (uses->refine->mod.list.min != 0)
-                        uses->refine->flags += LYS_RFN_MINSET;
+                        uses->refine->flags |= LYS_RFN_MINSET;
                     if (uses->refine->mod.list.max != 0)
-                        uses->refine->flags += LYS_RFN_MAXSET;
+                        uses->refine->flags |= LYS_RFN_MAXSET;
                     uses->refine_size = 1;
                     removeNode(*node);
                 }
@@ -2295,14 +2295,29 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
 
     // Go through the tpdfStore and look for the node corresponding to the
     // element referenced by sdfRef (ref)
-    cout << "TPDFs for " << data->getName() << endl;
     for (int i = 0; i < tpdfStore.size(); i++)
     {
         if (ref && pathsToNodes[refString]
                                 == (lys_node*)&tpdfStore[i])
         {
-            cout << "found " << avoidNull(tpdfStore[i].name) << endl;
-            lys_type type = {};
+
+            lys_type *type;
+            // type is stored differently in nodes and tpdfs so it is necessary
+            // to make a distinction
+            if (nodeIsTpdf)
+                type = &((lys_tpdf*)node)->type;
+            else
+                type = &((lys_node_leaf*)node)->type;
+            type->base = LY_TYPE_DER;
+            type->der = &tpdfStore[i];
+/*
+            type = &((lys_tpdf*)node)->type;
+            type->base = LY_TYPE_DER;
+            type->der = &tpdfStore[i];
+*/
+            //cout << &((lys_node_leaf*)node)->type<< " address of *nodes type " << avoidNull(node->name) << endl;
+
+            /*lys_type type = {};
             type.parent = ((lys_node_leaf*)node)->type.parent;
             type.base = LY_TYPE_DER;
 
@@ -2311,11 +2326,8 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
 
             type.der = &tpdfStore[i];
 
-            if (nodeIsTpdf)
-                ((lys_tpdf*)node)->type = type;
-            else
-                ((lys_node_leaf*)node)->type = type;
-
+            ((lys_tpdf*)node)->type = type;
+*/
             return node;
         }
     }
@@ -2323,7 +2335,7 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
     return node;
 }
 
-struct lys_tpdf * sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
+struct lys_tpdf* sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
 {
     if (!data)
     {
@@ -2350,15 +2362,17 @@ struct lys_tpdf * sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
 
     tpdf->dflt = storeString(data->getDefaultAsString());
 
-
     tpdf = storeTypedef(*tpdf);
     if (data->getReference())
     {
-        cout << "ref for " << data->getName() << endl;
         openRefsTpdf.push_back(
-             tuple<sdfData*, lys_node*>{data, (lys_node*)tpdf});
+             tuple<sdfData*, lys_tpdf*>{data, tpdf});
+        //openRefs.push_back(
+        //     tuple<sdfData*, lys_node*>{data, (lys_node*)tpdf});
     }
+
     pathsToNodes[data->generateReferenceString()] = (lys_node*)tpdf;
+
     return tpdf;
 }
 
@@ -2559,7 +2573,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
 }
 
 void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
-{
+{/*
     shared_ptr<lys_tpdf[]> tpdfs(
             new lys_tpdf[module.tpdf_size + datatypes.size()]());
 
@@ -2569,7 +2583,9 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
 
     uint16_t cnt = module.tpdf_size;
     voidPointerStore.push_back(tpdfs);
-
+    module.tpdf = tpdfs.get();
+*/
+    uint16_t cnt = tpdfStore.size();
     sdfData *data;
     for (int i = 0; i < datatypes.size(); i++)
     {
@@ -2583,9 +2599,12 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
             //module.tpdf[cnt].module = &module;
             //tpdfStore.push_back(module.tpdf[cnt]);
 
-            tpdfs[cnt] = {};
-            sdfDataToTypedef(data, &tpdfs[cnt]);
-            tpdfs[cnt].module = &module;
+            //module.tpdf[cnt] = {};
+            //sdfDataToTypedef(data, module.tpdf[cnt]);
+            //module.tpdf[cnt].module = &module;
+            shared_ptr<lys_tpdf> t(new lys_tpdf());
+            t = make_shared<lys_tpdf>(*sdfDataToTypedef(data, t.get()));
+            t->module = &module;
             //module.tpdf[cnt] = *storeTypedef(tpdf);
             /*
             lys_tpdf tpdf = {};
@@ -2630,8 +2649,7 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
 
     // TODO: should the typedef always be on top-level so it can be reached
     // from everywhere (scoping)?
-    module.tpdf = tpdfs.get();
-    module.tpdf_size = cnt;
+    //module.tpdf_size = cnt;
 }
 
 struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
@@ -2830,6 +2848,7 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 
     }
 
+    // asign open references in nodes
     sdfData *d;
     lys_node *n;
     for (int i = 0; i < openRefs.size(); i++)
@@ -2837,12 +2856,18 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
         tie(d, n) = openRefs[i];
         n = sdfRefToNode(d, n, module);
     }
+    // asign open references in typedefs
+    lys_tpdf* t;
     for (int i = 0; i < openRefsTpdf.size(); i++)
     {
-        tie(d, n) = openRefsTpdf[i];
-        n = sdfRefToNode(d, n, module, true);
+        tie(d, t) = openRefsTpdf[i];
+        t = (lys_tpdf*)sdfRefToNode(d, (lys_node*)t, module, true);
     }
-/*
+
+    module.tpdf = tpdfStore.data();
+    module.tpdf_size = tpdfStore.size();
+
+    /*
     // assign typedef pointers to types
     string name;
     lys_type *type;
