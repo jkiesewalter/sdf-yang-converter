@@ -591,7 +591,8 @@ public:
     nlohmann::json thingToJson(nlohmann::json prefix, bool print_info_namespace = false);
     std::string thingToString(bool print_info_namespace = true);
     void thingToFile(std::string path);
-    sdfThing* jsonToThing(nlohmann::json input); // TODO: return void?
+    // TODO: jsonToThing return void?
+    sdfThing* jsonToThing(nlohmann::json input, bool nested = false);
     sdfThing* jsonToNestedThing(nlohmann::json input);
     sdfThing* fileToThing(std::string path);
 

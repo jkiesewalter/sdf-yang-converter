@@ -18,6 +18,7 @@
 #define MAX_NUM 3.4e+38 // maximal float
 #define MAX_INT 2147483647 // maximal integer (64)
 #define JSON_MAX_STRING_LENGTH 2097152 // maximal length of a json string
+#define YANG_VERSION 2 // conversion is based on YANG 1.1
 
 // for convenience
 using json = nlohmann::json;
@@ -1986,6 +1987,7 @@ void addNode(lys_node &child, lys_node &parent, lys_module &module)
                 << endl;
         return;
     }*/
+    //cout << avoidNull(child.name) << avoidNull(parent.name) << endl;
     child.parent = &parent;
     child.module = &module;
 
@@ -2006,6 +2008,7 @@ void addNode(lys_node &child, lys_node &parent, lys_module &module)
 
 void addNode(lys_node &child, lys_module &module)
 {
+    //cout << avoidNull(child.name) << avoidNull(module.name) << endl;
     child.parent = NULL;
     child.module = &module;
 
@@ -2026,6 +2029,7 @@ void addNode(lys_node &child, lys_module &module)
 
 void removeNode(lys_node &node)
 {
+    cout << "remove node "+avoidNull(node.name) << endl;
     // if the node is not a top-level node
     if (node.parent)
     {
@@ -2073,8 +2077,14 @@ void removeNode(lys_node &node)
 lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
         bool nodeIsTpdf = false)
 {
+    cout << avoidNull(node->name) <<endl;
     if (!data)
         return NULL;
+    if (!node->module)
+    {
+        cerr << avoidNull(node->name) << " has no module" << endl;
+        return NULL;
+    }
 
     // getSimpType returns the type of the ref if there is one
     jsonDataType refType = data->getSimpType();
@@ -2106,6 +2116,7 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                 type.info.lref.target = (lys_node_leaf*)nodeStore[i].get();
                 type.info.lref.path = storeString(
                         generatePath(nodeStore[i].get()));
+                cout << avoidNull(type.info.lref.path) << endl;
 
 //                missingLeafsOfLeafrefs.push_back(
 //                        tuple<string, lys_type_info_lref*>{ref->getName(),
@@ -2231,6 +2242,7 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
             }
             else if (nodeStore[i]->nodetype == LYS_GROUPING)
             {
+                cout << "nodeStore[i] " << avoidNull(nodeStore[i]->name)<<endl;
                 // uses
                 shared_ptr<lys_node_uses> uses =
                         shared_ptr<lys_node_uses>(new lys_node_uses());
@@ -2243,9 +2255,11 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                 uses->refine = refine.get();
                 //uses->refine = new lys_refine();
                 uses->refine->module = &module;
+                if (uses->grp->child)
+                {
                 uses->refine->target_name = uses->grp->child->name;
                 uses->refine->target_type = uses->grp->child->nodetype;
-                string dsc = avoidNull(node->name) + "\n"
+                }string dsc = avoidNull(node->name) + "\n"
                         + avoidNull(node->dsc);
                 uses->refine->dsc = storeString(dsc);
                 bool isList = false;
@@ -2332,7 +2346,8 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
         }
     }
 
-    return node;
+    // if no match was found return NULL
+    return NULL;
 }
 
 struct lys_tpdf* sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
@@ -2390,6 +2405,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     // type object -> container
     if (data->getSimpType() == json_object)
     {
+        cout << "container "+data->getName()<<endl;
         shared_ptr<lys_node_container> cont =
                 shared_ptr<lys_node_container>(new lys_node_container());
         //lys_node_container *cont = new lys_node_container();
@@ -2567,6 +2583,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     {
         //        node = sdfRefToNode(data, node, module);
         openRefs.push_back(tuple<sdfData*, lys_node*>{data, node});
+        cout << node << "????"+avoidNull(node->name)<<endl;
     }
 
     return node;
@@ -2634,9 +2651,15 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
             }
             else*/
             if (child->nodetype == LYS_CONTAINER)
+            {
+                cout <<"cont " +avoidNull(child->name) <<endl;
                 grp = make_shared<lys_node_grp>((lys_node_grp&)*child);
+            }
             else
+            {
+                cout <<"else " + avoidNull(child->name) <<endl;
                 addNode(*child, (lys_node&)*grp, module);
+            }
 
             grp->nodetype = LYS_GROUPING;
             grp->name = data->getNameAsArray();
@@ -2644,6 +2667,8 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
             addNode(*storeNode((shared_ptr<lys_node>&)grp), module);
             pathsToNodes[data->generateReferenceString()] =
                     (lys_node*)grp.get();
+
+            cout << grp->child<< " new grouping " << generatePath((lys_node*)grp.get()) << endl;
         }
     }
 
@@ -2652,7 +2677,54 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
     //module.tpdf_size = cnt;
 }
 
-struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
+void convertInfoBlock(sdfInfoBlock *info, lys_module &module)
+{
+    if (!info)
+        return;
+    // TITLE has to be altered
+    string title = info->getTitle();
+    // All special characters (like '(') have to be removed from the title
+    title.resize(remove_if(title.begin(), title.end(),
+            [](char x){return !isalnum(x) && !isspace(x);})-title.begin());
+    // Spaces are replaced by '-'
+    replace(title.begin(), title.end(), ' ', '-');
+    // All characters in the title have to be lower case
+    for (int i = 0; i < title.length(); i++)
+        title[i] = tolower(title[i]);
+    module.name = storeString(title);
+
+    // DESCRIPTION
+    // copyright and license of SDF are put into the module's description
+    string dsc = info->getTitle()
+            //+ "\n\n" + object.getDescription()
+            + "\n" + avoidNull(module.dsc);
+            + "\n\nCopyright: " + info->getCopyright()
+            + "\nLicense: " + info->getLicense();
+    module.dsc = storeString(dsc);
+
+    // COPYRIGHT
+    module.org = info->getCopyrightAsArray();
+
+    // VERSION
+    lys_revision *rev = new lys_revision();
+    revStore.push_back(*rev);
+    delete rev;
+    module.rev = &revStore.back();
+    strncpy(module.rev[0].date, storeString(info->getVersion()),
+            sizeof(module.rev[0].date));
+    module.rev_size = 1;
+}
+
+void convertNamespaceSection(sdfNamespaceSection *ns, lys_module &module)
+{
+    if (!ns)
+        return;
+    module.prefix = ns->getNamespacesAsArrays().begin()->first;
+    module.ns = ns->getNamespacesAsArrays().begin()->second;
+}
+
+struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module,
+        bool nested = false)
 {
     module.type = 0;
     module.deviated = 0;
@@ -2664,9 +2736,18 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     module.deviation_size = 0;
     module.extensions_size = 0;
     module.ext_size = 0;
+    module.ref = "";
+    module.contact = "";
+    module.version = YANG_VERSION;
 
+    module.name = storeString(object.getName());
+    module.dsc = storeString(object.getDescription());
+    convertInfoBlock(object.getInfo(), module);
+    convertNamespaceSection(object.getNamespace(), module);
+    /*
     // title has to be altered
-    string title = object.getInfo()->getTitle();
+    sdfInfoBlock *info = object.getInfo();
+    string title = info->getTitle();
     // All special characters (like '(') have to be removed from the title
     title.resize(remove_if(title.begin(), title.end(),
             [](char x){return !isalnum(x) && !isspace(x);})-title.begin());
@@ -2678,32 +2759,33 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     module.name = storeString(title);
 
     // copyright and license of SDF are put into the module's description
-    string dsc = object.getInfo()->getTitle()
+    string dsc = info->getTitle()
             + "\n\n" + object.getDescription()
-            + "\n\nCopyright: " + object.getInfo()->getCopyright()
-            + "\nLicense: " + object.getInfo()->getLicense();
+            + "\n\nCopyright: " + info->getCopyright()
+            + "\nLicense: " + info->getLicense();
 
     module.dsc = storeString(dsc);
+    module.org = info->getCopyrightAsArray();
 
-    module.prefix = object.getNamespace()->getNamespacesAsArrays().begin()
-                                                                      ->first;
-    module.ns = object.getNamespace()->getNamespacesAsArrays().begin()
-                                                                      ->second;
-    module.org = object.getInfo()->getCopyrightAsArray();
-    module.ref = "";
-    module.contact = "";
     lys_revision *rev = new lys_revision();
     revStore.push_back(*rev);
     delete rev;
     module.rev = &revStore.back();
-    strncpy(module.rev[0].date, storeString(object.getInfo()->getVersion()),
+    strncpy(module.rev[0].date, storeString(info->getVersion()),
             sizeof(module.rev[0].date));
     module.rev_size = 1;
+
+    sdfNamespaceSection *ns = object.getNamespace();
+    module.prefix = ns->getNamespacesAsArrays().begin()->first;
+    module.ns = ns->getNamespacesAsArrays().begin()->second;
+    module.ref = "";
+    module.contact = "";
+    */
 
     // convert datatypes to typedefs or groupings
     convertDatatypes(object.getDatatypes(), module);
 
-    lys_node_container props = {
+    /*lys_node_container props = {
             .name = "properties",
             .dsc = "The translated sdfProperties",
             //.ref = NULL,
@@ -2727,7 +2809,7 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     shared_ptr<lys_node_container> propsCont =
             make_shared<lys_node_container>(props);
     addNode(*storeNode((shared_ptr<lys_node>&)propsCont), module);
-
+*/
     vector<sdfProperty*> properties = object.getProperties();
     lys_node *currentNode;
     for (sdfProperty *i : object.getProperties())
@@ -2735,7 +2817,8 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
         currentNode = NULL;//new lys_node();
         currentNode = sdfDataToNode(i, currentNode, module);
         // add the current node into the tree
-        addNode(*currentNode, (lys_node&)*propsCont, module);
+        //addNode(*currentNode, (lys_node&)*propsCont, module);
+        addNode(*currentNode, module);
     }
 
     vector<sdfAction*> actions = object.getActions();
@@ -2845,23 +2928,33 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     for (int i = 0; i < reqs.size(); i++)
     {
         req = reqs[i];
-
+        // TODO
     }
 
-    // asign open references in nodes
-    sdfData *d;
-    lys_node *n;
-    for (int i = 0; i < openRefs.size(); i++)
+    if (!nested)
     {
-        tie(d, n) = openRefs[i];
-        n = sdfRefToNode(d, n, module);
-    }
-    // asign open references in typedefs
-    lys_tpdf* t;
-    for (int i = 0; i < openRefsTpdf.size(); i++)
-    {
-        tie(d, t) = openRefsTpdf[i];
-        t = (lys_tpdf*)sdfRefToNode(d, (lys_node*)t, module, true);
+        // assign open references in nodes
+        sdfData *d;
+        lys_node *n;
+        vector<tuple<sdfData*, lys_node*>> stillLeft = {};
+        for (int i = 0; i < openRefs.size(); i++)
+        {
+            tie(d, n) = openRefs[i];
+            if (!sdfRefToNode(d, n, module))
+                stillLeft.push_back(openRefs[i]);
+        }
+        openRefs = stillLeft;
+
+        // assign open references in typedefs
+        lys_tpdf* t;
+        vector<tuple<sdfData*, lys_tpdf*>> stillLeftTpdf = {};
+        for (int i = 0; i < openRefsTpdf.size(); i++)
+        {
+            tie(d, t) = openRefsTpdf[i];
+            if (!sdfRefToNode(d, (lys_node*)t, module, true))
+                stillLeftTpdf.push_back(openRefsTpdf[i]);
+        }
+        openRefsTpdf = stillLeftTpdf;
     }
 
     module.tpdf = tpdfStore.data();
@@ -2908,34 +3001,128 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 /*
  * The information from a sdfThing is transferred into a YANG module
  */
-struct lys_module* sdfThingToModule(sdfThing *thing)
+struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module,
+        bool nested = false)
 {
-    struct lys_module *module;
-    printf("in sdfThingToModule\n");
-    module->version = 0;
-    module->name = thing->getName().c_str();
-    //std::cout << thing->getName().c_str() << std::endl;
-    module->dsc = "oh hi";//thing->getDescription().c_str();
-    module->prefix = "ietf";
-    module->ns = "stand";
-    module->org = "";
-    module->ref = "";
-    module->contact = "";
-    module->type = 0;
-    module->deviated = 0;
-    module->rev_size = 0;
-    module->imp_size = 0;
-    module->inc_size = 0;
-    module->ident_size = 0;
-    module->tpdf_size = 0;
-    module->features_size = 0;
-    module->augment_size = 0;
-    module->deviation_size = 0;
-    module->extensions_size = 0;
-    module->ext_size = 0;
-    //module->data = new lys_node();
-    module->data = NULL;
-    return module;
+    vector<sdfThing*> things = thing.getThings();
+    vector<sdfObject*> objects = thing.getObjects();
+    vector<lys_node*> conts;
+    conts.reserve(objects.size() + things.size());
+
+    for (int i = 0; i < things.size(); i++)
+    {
+        cout << things[i]->getName() << endl;
+        sdfThingToModule(*things[i], module, true);
+
+        shared_ptr<lys_node_container> cont(new lys_node_container());
+        cont->nodetype = LYS_CONTAINER;
+        cont->presence = "presence";
+        cont->name = storeString(things[i]->getName());
+        cont->dsc = storeString(things[i]->getDescription());
+
+        cont->child = module.data;
+        module.data = NULL;
+
+        for (lys_node *n = cont->child; n != NULL; n = n->next)
+            n->parent = (lys_node*)cont.get();
+
+        conts.push_back(storeNode((shared_ptr<lys_node>&)cont));
+
+        /*
+        shared_ptr<lys_include[]> inc(
+                new lys_include[things.size()]());
+        module.inc = inc.get();
+        module.inc_size = things.size();
+        shared_ptr<lys_submodule> submod(new lys_submodule());
+        sdfThingToModule(*things[i], (lys_module&)*submod, true);
+
+        submod->belongsto = &module;
+        submod->ctx = module.ctx;
+        submod->type = 1;
+        module.inc[i].dsc = submod->dsc;
+        if (submod->rev && submod->rev[0].date)
+            memcpy(module.inc[i].rev, submod->rev[0].date, LY_REV_SIZE);
+        module.inc[i].submodule = submod.get();
+        */
+    }
+
+    for (int i = 0; i < objects.size(); i++)
+    {
+        cout << objects[i]->getName() << endl;
+        sdfObjectToModule(*objects[i], module, true);
+
+        shared_ptr<lys_node_container> cont(new lys_node_container());
+        cont->nodetype = LYS_CONTAINER;
+        cont->presence = "presence";
+        cont->name = storeString(objects[i]->getName());
+        cont->dsc = storeString(objects[i]->getDescription());
+
+        cont->child = module.data;
+        module.data = NULL;
+
+        for (lys_node *n = cont->child; n != NULL; n = n->next)
+            n->parent = (lys_node*)cont.get();
+
+        conts.push_back(storeNode((shared_ptr<lys_node>&)cont));
+    }
+
+    for (int i = 0; i < conts.size(); i++)
+        addNode(*conts[i], module);
+
+    if (!nested)
+    {
+        cout << "!!!!"+avoidNull(module.data->child->child->next->name)<<endl;
+        cout << generatePath(module.data->child->child->next) << endl;
+    }
+
+    module.type = 0;
+    module.deviated = 0;
+    module.imp_size = 0;
+    module.inc_size = 0;
+    module.ident_size = 0;
+    module.features_size = 0;
+    module.augment_size = 0;
+    module.deviation_size = 0;
+    module.extensions_size = 0;
+    module.ext_size = 0;
+    module.ref = "";
+    module.contact = "";
+    module.version = YANG_VERSION;
+
+    module.name = storeString(thing.getName());
+    module.dsc = storeString(thing.getDescription());
+    convertInfoBlock(thing.getInfo(), module);
+    convertNamespaceSection(thing.getNamespace(), module);
+
+    if (!nested)
+    {
+        // assign open references in nodes
+        sdfData *d;
+        lys_node *n;
+        vector<tuple<sdfData*, lys_node*>> stillLeft = {};
+        for (int i = 0; i < openRefs.size(); i++)
+        {
+            tie(d, n) = openRefs[i];
+            cout << "1"+generatePath(n) << endl;
+            if (!sdfRefToNode(d, n, module))
+                stillLeft.push_back(openRefs[i]);
+        }
+        openRefs = stillLeft;
+
+        // assign open references in typedefs
+        lys_tpdf* t;
+        vector<tuple<sdfData*, lys_tpdf*>> stillLeftTpdf = {};
+        for (int i = 0; i < openRefsTpdf.size(); i++)
+        {
+            tie(d, t) = openRefsTpdf[i];
+            cout << "2"+generatePath(n) << endl;
+            //if (!sdfRefToNode(d, (lys_node*)t, module, true))
+            //    stillLeftTpdf.push_back(openRefsTpdf[i]);
+        }
+        openRefsTpdf = stillLeftTpdf;
+    }
+
+    return &module;
 }
 
 int main(int argc, const char** argv)
@@ -3068,7 +3255,6 @@ int main(int argc, const char** argv)
     }
 
     // check whether input file is a SDF file
-    //if (std::regex_match(argv[1], sdf_json_regex))
     else if (std::regex_match(inputFileName, sdf_json_regex))
     {
         if (outputFileName && !std::regex_match(outputFileName, yang_regex))
@@ -3076,49 +3262,28 @@ int main(int argc, const char** argv)
             cerr << "Incorrect output file format\n" << endl;
             //return -1;
         }
-        // check whether output file has right format
-        // -> only the name of the module is given in the input now
-        /*if (!std::regex_match(argv[2], yang_regex))
-        {
-            printf("Incorrect output file format\n");
-            //return -1;
-        }*/
 
-        // TODO: fill module
         sdfObject moduleObject;
         sdfThing moduleThing;
-        //lys_module *module = new lys_module;
-        lys_revision revInit[1];
-        revInit[0].ext_size = 0;
-        revInit[0].dsc = NULL;
-        revInit[0].ref = NULL;
-        lys_node dataInit = {
-                .dsc = NULL,
-                .ref = NULL,
-                .ext_size = 0,
-                .parent = &dataInit,
-                .child = NULL,
-                .next = NULL,
-                .prev = NULL,
-        };
-        lys_tpdf tpdfInit[1];
-        tpdfInit[0].ext_size = 0;
-        tpdfInit[0].dsc = NULL;
-        tpdfInit[0].ref = NULL;
-        lys_module module = {
-                //.rev = revInit,
-                .tpdf = tpdfInit,
-                //.data = &dataInit,
-        };
-        //module->ctx = ly_ctx_new(argv[3], 0);
-        //ly_ctx *ctx = ly_ctx_new(argv[3], 0);
+        lys_module module = {};
         module.ctx = ctx;
-        //module = const_cast<lys_module*>(lys_parse_path(ctx,
-        //                "yang/standard/ietf/RFC/ietf-l2vpn-svc.yang",
-        //                LYS_IN_YANG));
-        //if (moduleObject.fileToObject(argv[1]) != NULL)
+
+        // TODO: approximate sizes of store vectors
+        unsigned int nodeApprox = moduleObject.getDatatypes().size()
+                + moduleObject.getProperties().size()
+                + moduleObject.getActions().size()
+                + moduleObject.getEvents().size();
+        nodeStore.reserve(1000);
+        stringStore.reserve(10000);
+        revStore.reserve(50);
+        tpdfStore.reserve(500);
+        restrStore.reserve(500);
+        openRefs.reserve(500);
+        openRefsTpdf.reserve(500);
+
         cout << "Loading SDF JSON file" << endl;
         validateFile(inputFileName);
+
         if (moduleObject.fileToObject(inputFileName) != NULL)
         {
             cout << "Loading SDF JSON file -> finished" << endl;
@@ -3126,56 +3291,35 @@ int main(int argc, const char** argv)
             //<< removeQuotationMarksFromString(moduleObject->objectToString())
             //<< moduleObject->objectToString()
             //<< endl;
-            unsigned int nodeApprox = moduleObject.getDatatypes().size()
-                    + moduleObject.getProperties().size()
-                    + moduleObject.getActions().size()
-                    + moduleObject.getEvents().size();
-
-            // TODO: approximate sizes of store vectors
-            /*nodeStore = vector<shared_ptr<lys_node>>(1000);
-            stringStore = vector<string>(1000);
-            revStore = vector<lys_revision>(50);
-            tpdfStore = vector<lys_tpdf>(500);
-            restrStore = vector<lys_restr>(500);*/
-            nodeStore.reserve(1000);
-            stringStore.reserve(1000);
-            revStore.reserve(50);
-            tpdfStore.reserve(500);
-            restrStore.reserve(500);
 
             sdfObjectToModule(moduleObject, module);
         }
         else if (moduleThing.fileToThing(inputFileName) != NULL)
         {
-            //moduleThing.fileToThing(argv[1]);
-            //cout << moduleThing.thingToString() << endl;
-            //module = sdfThingToModule(moduleThing);
+            cout << "Loading SDF JSON file -> finished" << endl;
+            sdfThingToModule(moduleThing, module);
         }
         else
         {
-            // TODO
+            cerr << "No sdfObject or sdfThing could be loaded from the "
+                    "input file\nDONE" << endl;
+            return -1;
         }
 
         string outputFileString;
-        //if (argc == 4)
         if (outputFileName)
         {
-            //tmpFileName = argv[2];
-            //tmpFileName = outputFileName;
-            //tmpFileName = tmpFileName + ".yang";
             cmatch cm;
             regex r("(.*)\\.yang");
             regex_match(outputFileName, cm, r);
-            //module.name = argv[2];
             module.name = cm[1].str().c_str();
         }
-        else// if (argc == 3)
+        else
         {
             outputFileString = module.name;
             outputFileString = outputFileString + ".yang";
             outputFileName = outputFileString.c_str();
         }
-        //const char *fileName = tmpFileName.c_str();
 
         cout << "Converting SDF model to YANG ";
         const lys_module *const_module = const_cast<lys_module*>(&module);

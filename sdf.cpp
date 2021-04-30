@@ -87,8 +87,8 @@ sdfCommon* refToCommon(string ref)
     {
         cerr << "refToCommon(): definition for reference "
                 << ref << " does not exist" << endl;
-        return NULL;
     }
+    return NULL;
 }
 
 vector<tuple<string, sdfCommon*>> assignRefs(
@@ -108,6 +108,7 @@ vector<tuple<string, sdfCommon*>> assignRefs(
 
         if (!com || !com->getReference())
             stillLeft.push_back(r);
+        //cout << name << endl;
     }
 
     return stillLeft;
@@ -966,12 +967,16 @@ string sdfData::generateReferenceString()
     }
     else
     {
+        sdfData *d = dynamic_cast<sdfData*>(parent);
+        sdfObject *o = dynamic_cast<sdfObject*>(parent);
         sdfAction *a = dynamic_cast<sdfAction*>(parent);
         sdfEvent *e = dynamic_cast<sdfEvent*>(parent);
 
+        // if the parent is an item constraint data element
+        if (d && !o && !a && !e && this->isItemConstr())
+            return d->generateReferenceString();
         // if the parent is another sdfData object
-        if (dynamic_cast<sdfData*>(parent) && !dynamic_cast<sdfObject*>(parent)
-                && !a && !e)
+        else if (d && !o  && !a && !e)
             return parent->generateReferenceString()
                     + "/" + this->getName();
 
@@ -1795,6 +1800,7 @@ void sdfCommon::jsonToCommon(json input)
             //this->reference = refToCommon(correctValue(it.value()));
             unassignedRefs.push_back(tuple<string, sdfCommon*>{
                 correctValue(it.value()), this});
+            //cout << correctValue(it.value()) << endl;
         }
         else if (it.key() == "sdfRequired")
             for (auto jt : it.value())
@@ -1805,7 +1811,7 @@ void sdfCommon::jsonToCommon(json input)
                     correctValue(jt), this});
     }
     existingDefinitons[this->generateReferenceString()] = this;
-    //cout << "jsonToCommon: " << this->generateReferenceString() << endl;
+    //cout << "!!!jsonToCommon: " << this->generateReferenceString() <<"!!!" << endl;
 }
 
 sdfData* sdfData::jsonToData(json input)
@@ -2093,7 +2099,7 @@ sdfData* sdfData::jsonToData(json input)
                 this->subtype = sdf_subtype_undef;
         }
     }
-    this->jsonToCommon(input);
+    //this->jsonToCommon(input);
     return this;
 }
 
@@ -2130,7 +2136,7 @@ sdfEvent* sdfEvent::jsonToEvent(json input)
             }
         }
     }
-    this->jsonToCommon(input);
+    //this->jsonToCommon(input);
     return this;
 }
 
@@ -2180,15 +2186,15 @@ sdfAction* sdfAction::jsonToAction(json input)
             }
         }
     }
-    this->jsonToCommon(input);
+    //this->jsonToCommon(input);
     return this;
 }
 
 sdfProperty* sdfProperty::jsonToProperty(json input)
 {
-    this->jsonToCommon(input);
+    //this->jsonToCommon(input);
     this->jsonToData(input);
-    this->jsonToCommon(input);
+    //this->jsonToCommon(input);
     return this;
 }
 
@@ -2211,12 +2217,17 @@ sdfObject* sdfObject::jsonToObject(json input)
         // for first level
         else if (it.key() == "sdfObject" && !it.value().empty())
         {
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
+            {
+                this->setName(correctValue(jt.key()));
                 this->jsonToObject(input["sdfObject"][jt.key()]);
+            }
         }
         else if (it.key() == "sdfData" && !it.value().empty())
         {
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
             {
                 sdfData *childData = new sdfData();
                 this->addDatatype(childData);
@@ -2226,7 +2237,8 @@ sdfObject* sdfObject::jsonToObject(json input)
         }
         else if (it.key() == "sdfProperty" && !it.value().empty())
         {
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
             {
                 sdfProperty *childProperty = new sdfProperty();
                 this->addProperty(childProperty);
@@ -2238,7 +2250,8 @@ sdfObject* sdfObject::jsonToObject(json input)
         }
         else if (it.key() == "sdfAction" && !it.value().empty())
         {
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
             {
                 sdfAction *childAction = new sdfAction();
                 this->addAction(childAction);
@@ -2248,7 +2261,8 @@ sdfObject* sdfObject::jsonToObject(json input)
         }
         else if (it.key() == "sdfEvent" && !it.value().empty())
         {
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
             {
                 sdfEvent *childEvent =  new sdfEvent();
                 this->addEvent(childEvent);
@@ -2260,7 +2274,8 @@ sdfObject* sdfObject::jsonToObject(json input)
         }
         else if (it.key() == "sdfThing")
         {
-            cerr << "jsonToObject(): incorrect sdfObject (sdfThing found)";
+            cerr << "jsonToObject(): incorrect sdfObject (sdfThing found)"
+                    << endl;
             return NULL;
         }
         /*
@@ -2272,12 +2287,18 @@ sdfObject* sdfObject::jsonToObject(json input)
         }*/
     }
 
-    unassignedRefs = assignRefs(unassignedRefs);
-    unassignedReqs = assignRefs(unassignedReqs);
-
+    // only try to assign refs when this is a top level object
+    // TODO: if there was a 'top level structure' do that there
+    if (!this->getParentThing())
+    {
+        // assign sdfRef and sdfRequired references
+        unassignedRefs = assignRefs(unassignedRefs);
+        unassignedReqs = assignRefs(unassignedReqs);
+    }
     // jsonToCommon needs to be called twice because of sdfRequired
     // (which cannot be filled before the rest of the object)
-    this->jsonToCommon(input);
+    // TODO: does it really (changed way of assigning sdfRef)?
+    //this->jsonToCommon(input);
     return this;
 }
 
@@ -2295,43 +2316,7 @@ sdfObject* sdfObject::fileToObject(string path)
     return this->jsonToObject(json_input);
 }
 
-/*
- * This has to be an extra function because it is otherwise not possible
- * to distinguish whether this is a first-level Thing or a nested thing
- */
-sdfThing* sdfThing::jsonToNestedThing(json input)
-{
-    this->jsonToCommon(input);
-    for (json::iterator it = input.begin(); it != input.end(); ++it)
-    {
-        if (it.key() == "sdfThing" && !it.value().empty())
-        {
-            for (json::iterator jt = it.value().begin();
-                    jt != it.value().end(); ++jt)
-            {
-                sdfThing *childThing = new sdfThing();
-                this->addThing(childThing);
-                childThing->jsonToNestedThing(input["sdfThing"][jt.key()]);
-            }
-        }
-        else if (it.key() == "sdfObject" && !it.value().empty())
-        {
-            for (json::iterator jt = it.value().begin();
-                    jt != it.value().end(); ++jt)
-            {
-                sdfObject *childObject = new sdfObject();
-                this->addObject(childObject);
-                childObject->jsonToObject(input["sdfObject"][jt.key()]);
-            }
-        }
-    }
-    unassignedRefs = assignRefs(unassignedRefs);
-    unassignedReqs = assignRefs(unassignedReqs);
-    this->jsonToCommon(input);
-    return this;
-}
-
-sdfThing* sdfThing::jsonToThing(json input)
+sdfThing* sdfThing::jsonToThing(json input, bool nested)
 {
     this->jsonToCommon(input);
     sdfObject *childObject;
@@ -2358,10 +2343,23 @@ sdfThing* sdfThing::jsonToThing(json input)
             for (json::iterator jt = it.value().begin();
                     jt != it.value().end(); ++jt)
             {
-                //sdfThing *childThing;
-                //childThing->jsonToThing(input["sdfThing"][jt.key()]);
-                //this->addThing(childThing);
-                this->jsonToNestedThing(input["sdfThing"][jt.key()]);
+                if (!nested)
+                {
+                    this->setName(correctValue(jt.key()));
+                    this->jsonToThing(input["sdfThing"][jt.key()], true);
+                    //this->jsonToNestedThing(input["sdfThing"][jt.key()]);
+                }
+                else
+                {
+                    sdfThing *childThing = new sdfThing();
+                    childThing->setName(correctValue(jt.key()));
+                    this->addThing(childThing);
+                    childThing->jsonToThing(input["sdfThing"][jt.key()], true);
+                }
+
+                // TODO: what if there is more than one sdfThing on the highest
+                // level / more than one sdfObject
+                // -> create a structure, e.g. *file*, that holds them???
             }
         }
         else if (it.key() == "sdfObject" && !it.value().empty())
@@ -2370,14 +2368,25 @@ sdfThing* sdfThing::jsonToThing(json input)
                     jt != it.value().end(); ++jt)
             {
                 childObject = new sdfObject();
+                childObject->setName(correctValue(jt.key()));
                 this->addObject(childObject);
                 childObject->jsonToObject(input["sdfObject"][jt.key()]);
             }
         }
     }
-    unassignedRefs = assignRefs(unassignedRefs);
-    unassignedReqs = assignRefs(unassignedReqs);
-    this->jsonToCommon(input);
+    // only try to assign refs if this thing is at the top level
+    if (!nested)
+    {
+        // assign sdfRef and sdfRequired references
+        unassignedRefs = assignRefs(unassignedRefs);
+        unassignedReqs = assignRefs(unassignedReqs);
+
+        if (!unassignedRefs.empty() || !unassignedReqs.empty())
+            cerr << "There are "
+            + to_string(unassignedRefs.size()+unassignedReqs.size())
+            + " references left unassigned" << endl;
+    }
+    //this->jsonToCommon(input);
     return this;
 }
 
@@ -3081,7 +3090,6 @@ bool sdfData::isItemConstr() const
     if (parent && this == parent->getItemConstr())
         return true;
 
-    cout << "here " << this->getName() <<endl;
     return false;
 }
 
@@ -3096,7 +3104,6 @@ bool sdfData::isObjectProp() const
         if (find(op.begin(), op.end(), this) != op.end())
             return true;
     }
-    cout << "here " << this->getName() <<endl;
     return false;
 }
 
@@ -3115,14 +3122,14 @@ void sdfData::parseDefaultArray(lys_node_leaflist *node)
     else if(this->getSimpType() == json_array && node->dflt_size > 0)
     {
         defaultDefined = true;
-        cout<<"dflt size "<<to_string(node->dflt_size)<<endl;
+        //cout<<"dflt size "<<to_string(node->dflt_size)<<endl;
 
         if (this->getItemConstr()->getSimpType() == json_string)
         {
             for (int i = 0; i < node->dflt_size; i++)
             {
                 defaultStringArray.push_back(node->dflt[i]);
-                cout <<"dflt "<< node->dflt[i] << endl;
+                //cout <<"dflt "<< node->dflt[i] << endl;
             }
         }
 

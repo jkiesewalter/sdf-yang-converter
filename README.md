@@ -54,7 +54,7 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |SDF statement|translated to YANG|done?|problems/remarks|
 |-|-|-|-|
 |sdfProduct|module on highest level, container otherwise||Will sdfProduct even exist in future SDF versions?|
-|sdfThing|module on highest level, container otherwise|
+|sdfThing|module on highest level, container otherwise|||Round trips?|
 |sdfObject|module on highest level, container otherwise|done||
 |sdfProperty (type integer/number/boolean/string)|leaf|done|
 |sdfProperty (type array with items of type integer/number/boolean/string)|leaf-list|done|When the resulting leaf-list has one or more default values the libyang parser complains although I think that should be valid.|
