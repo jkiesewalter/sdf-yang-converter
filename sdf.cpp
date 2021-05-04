@@ -92,7 +92,7 @@ sdfCommon* refToCommon(string ref)
 }
 
 vector<tuple<string, sdfCommon*>> assignRefs(
-        vector<tuple<string, sdfCommon*>> unassignedRefs)
+        vector<tuple<string, sdfCommon*>> unassignedRefs, refOrReq r)
         //map<string, sdfCommon*> defs)
 {
     // check for references left unassigned
@@ -100,19 +100,25 @@ vector<tuple<string, sdfCommon*>> assignRefs(
     sdfCommon *com;
     vector<tuple<string, sdfCommon*>> stillLeft = {};
 
-    for (tuple<string, sdfCommon*> r : unassignedRefs)
+    for (tuple<string, sdfCommon*> unRefs : unassignedRefs)
     {
-        tie(name, com) = r;
+        tie(name, com) = unRefs;
         sdfCommon *ref = refToCommon(name);
         if (com && ref)
         {
-            //com->setReference(refToCommon(name));
-            com->setReference(ref);
+            if (r == REF)
+                com->setReference(ref);
+            else if (r == REQ)
+                com->addRequired(ref);
+
             //cout << com->getName()+" refs "+ref->getName()<<endl;
         }
 
-        if (!com || !com->getReference())
-            stillLeft.push_back(r);
+        vector<sdfCommon*> reqs = com->getRequired();
+        if (!com || (r == REF && !com->getReference()) ||
+                (r == REQ && find(reqs.begin(), reqs.end(), ref) == reqs.end()))
+            stillLeft.push_back(unRefs);
+
         //cout << name << endl;
     }
 
@@ -2305,8 +2311,8 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
     if (!this->getParentThing())
     {
         // assign sdfRef and sdfRequired references
-        unassignedRefs = assignRefs(unassignedRefs);
-        unassignedReqs = assignRefs(unassignedReqs);
+        unassignedRefs = assignRefs(unassignedRefs, REF);
+        unassignedReqs = assignRefs(unassignedReqs, REQ);
 
         if (!unassignedRefs.empty() || !unassignedReqs.empty())
             cerr << "There is/are "
@@ -2396,8 +2402,8 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
     if (!nested)
     {
         // assign sdfRef and sdfRequired references
-        unassignedRefs = assignRefs(unassignedRefs);
-        unassignedReqs = assignRefs(unassignedReqs);
+        unassignedRefs = assignRefs(unassignedRefs, REF);
+        unassignedReqs = assignRefs(unassignedReqs, REQ);
 
         if (!unassignedRefs.empty() || !unassignedReqs.empty())
             cerr << "There is/are "

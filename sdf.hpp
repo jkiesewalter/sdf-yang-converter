@@ -40,6 +40,7 @@ enum sdfSubtype
     sdf_unix_time,
     sdf_subtype_undef
 };
+enum refOrReq {REF, REQ};
 
 class sdfCommon;
 class sdfThing;

@@ -87,6 +87,10 @@ struct lys_tpdf unionTpdf = {
         .name = "union",
         .type = {.base = LY_TYPE_UNION}
 };
+struct lys_tpdf emptyTpdf = {
+        .name = "empty",
+        .type = {.base = LY_TYPE_EMPTY}
+};
 
 /*
  * Cast a char array to string with NULL being
@@ -1730,6 +1734,64 @@ sdfThing* submoduleToSdfThing(struct lys_submodule *submodule)
     return thing;
 }*/
 
+// TODO: translate YANG config to SDF somehow (e.g. extra (sdf)property?)
+// TODO: if defaults/const/range values cannot be translated from SDF, use
+// XPath expressions?
+// TODO: YANG union to sdfChoice over type! What about bits, binary?
+
+/*
+ * RFC 7950 3. Terminology: A mandatory node is
+ * a leaf/choice/anydata/anyxml node with "mandatory true",
+ * a list/leaf-list node with "min-elements" > 0
+ * or a non-presence container node with at least one mandatory child node
+ */
+bool setMandatory(lys_node *node, bool firstLevel = true)
+{
+    if (!node)
+        return false;
+
+    // TODO: go further until ALL child nodes are mandatory?
+
+    // leaf/choice nodes can be assigned the mandatory flag directly
+    if (node->nodetype & (LYS_LEAF | LYS_CHOICE))
+    {
+        node->flags |= LYS_MAND_TRUE;
+        return true;
+    }
+    if (node->nodetype & (LYS_LEAFLIST | LYS_LIST))
+    {
+        if (((lys_node_list*)node)->min < 1)
+            ((lys_node_list*)node)->min = 1; // TODO for YANG->SDF
+        return true;
+    }
+    if (node->nodetype & LYS_CONTAINER)
+        ((lys_node_container*)node)->presence = NULL;
+
+    bool success = false;
+    if (!firstLevel)
+        success = setMandatory(node->next, false);
+
+    if (!success)
+        success = setMandatory(node->child, false);
+
+    return success;
+}
+
+void sdfRequiredToNode(vector<sdfCommon*> reqs, lys_module &module)
+{
+    for (int i = 0; i < reqs.size(); i++)
+    {
+        lys_node *node = pathsToNodes[reqs[i]->generateReferenceString()];
+        if (!node)
+            cerr << "Node " + reqs[i]->getName() + " not found" << endl;
+
+        if (!setMandatory(node))
+            cerr << "Conversion of sdfRequired "
+            + reqs[i]->generateReferenceString() + " to 'mandatory' failed"
+            << endl;
+    }
+}
+
 void fillLysType(sdfData *data, struct lys_type &type)
 {
     if (!data)
@@ -1777,6 +1839,16 @@ void fillLysType(sdfData *data, struct lys_type &type)
         else if (!data->getRequiredObjectProperties().empty()
                 || !data->getObjectProperties().empty())
             type.base = stringToLType(json_object);
+        else
+        {
+            type.base = LY_TYPE_EMPTY;
+            //type.der = &emptyTpdf; TODO: put this back in when ready
+            // leave it out for now to not miss mistakes
+            // until then, do the following
+            shared_ptr<lys_tpdf> der(new lys_tpdf());
+            voidPointerStore.push_back((shared_ptr<void>)der);
+            type.der = der.get();
+        }
     }
 
     if (!data->getEnumString().empty())
@@ -2406,7 +2478,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
                 shared_ptr<lys_node_container>(new lys_node_container());
         //lys_node_container *cont = new lys_node_container();
         cont->nodetype = LYS_CONTAINER;
-        cont->presence = NULL;
+        //cont->presence = NULL;
         lys_node *childNode;
         vector<sdfData*> properties = data->getObjectProperties();
         for (int i = 0; i < properties.size(); i++)
@@ -2569,8 +2641,6 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     // which would then need keys
     node->flags += LYS_CONFIG_R;
 
-    // TODO: sdfRequired to mandatory
-
     pathsToNodes[data->generateReferenceString()] = node;
 
     if (data->getReference())
@@ -2633,6 +2703,8 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
             addNode(*storeNode((shared_ptr<lys_node>&)grp), module);
             pathsToNodes[data->generateReferenceString()] =
                     (lys_node*)grp.get();
+
+            sdfRequiredToNode(data->getRequired(), module);
 
             //cout << grp.get()<< " new grouping "
             //        << generatePath((lys_node*)grp.get()) << endl;
@@ -2749,36 +2821,36 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 
     vector<sdfProperty*> properties = object.getProperties();
     lys_node *currentNode;
-    for (sdfProperty *i : object.getProperties())
+    vector<sdfProperty*> props = object.getProperties();
+    for (int i = 0; i < props.size(); i++)
     {
         currentNode = NULL;
-        currentNode = sdfDataToNode(i, currentNode, module);
+        currentNode = sdfDataToNode(props[i], currentNode, module);
         // add the current node into the tree
         addNode(*currentNode, module);
+        sdfRequiredToNode(props[i]->getRequired(), module);
     }
 
     vector<sdfAction*> actions = object.getActions();
-    sdfAction *i;
-    for (int j = 0; j < actions.size(); j++)
+    for (int i = 0; i < actions.size(); i++)
     {
-        i = actions[j];
         shared_ptr<lys_node_rpc_action> action(new lys_node_rpc_action());
-        action->name = storeString(i->getName());
-        action->dsc = storeString(i->getDescription());
+        action->name = storeString(actions[i]->getName());
+        action->dsc = storeString(actions[i]->getDescription());
 
         if (object.getParentThing())
             action->nodetype = LYS_ACTION;
         else
             action->nodetype = LYS_RPC;
 
-        convertDatatypes(i->getDatatypes(), module);
+        convertDatatypes(actions[i]->getDatatypes(), module);
 
         shared_ptr<lys_node_inout> input(new lys_node_inout());
         input->nodetype = LYS_INPUT;
         storeNode((shared_ptr<lys_node>&)input);
         addNode((lys_node&)*input, (lys_node&)*action, module);
 
-        sdfData *inData = i->getInputData();
+        sdfData *inData = actions[i]->getInputData();
         if (inData)
         {
             lys_node *inputChild = sdfDataToNode(inData, inputChild, module);
@@ -2802,7 +2874,7 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
         storeNode((shared_ptr<lys_node>&)output);
         addNode((lys_node&)*output, (lys_node&)*action, module);
 
-        sdfData *outData = i->getOutputData();
+        sdfData *outData = actions[i]->getOutputData();
         if (outData)
         {
             lys_node *outputChild = sdfDataToNode(outData, outputChild, module);
@@ -2823,21 +2895,21 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 
         storeNode((shared_ptr<lys_node>&)action);
         addNode((lys_node&)*action, module);
+
+        sdfRequiredToNode(actions[i]->getRequired(), module);
     }
 
     vector<sdfEvent*> events = object.getEvents();
-    sdfEvent *event;
     for (int i = 0; i < events.size(); i++)
     {
-        event = events[i];
         shared_ptr<lys_node_notif> notif(new lys_node_notif());
-        notif->name = storeString(event->getName());
-        notif->dsc = storeString(event->getDescription());
+        notif->name = storeString(events[i]->getName());
+        notif->dsc = storeString(events[i]->getDescription());
         notif->nodetype = LYS_NOTIF;
 
-        convertDatatypes(event->getDatatypes(), module);
+        convertDatatypes(events[i]->getDatatypes(), module);
 
-        sdfData *outData = event->getOutputData();
+        sdfData *outData = events[i]->getOutputData();
         if (outData)
         {
             lys_node *outputChild = sdfDataToNode(outData, outputChild, module);
@@ -2856,15 +2928,11 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 
         storeNode((shared_ptr<lys_node>&)notif);
         addNode((lys_node&)*notif, module);
+
+        sdfRequiredToNode(events[i]->getRequired(), module);
     }
 
-    vector<sdfCommon*> reqs = object.getRequired();
-    sdfCommon *req;
-    for (int i = 0; i < reqs.size(); i++)
-    {
-        req = reqs[i];
-        // TODO
-    }
+    sdfRequiredToNode(object.getRequired(), module);
 
     // assign open references in nodes and typedefs
     if (!object.getParentThing())
@@ -2873,41 +2941,6 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     module.tpdf = tpdfStore.data();
     module.tpdf_size = tpdfStore.size();
 
-    /*
-    // assign typedef pointers to types
-    string name;
-    lys_type *type;
-    //for (tuple<string, lys_type*> t : missingTpdfOfType)
-    for (int j = 0; j < missingTpdfOfType.size(); j++)
-    {
-        tie(name, type) = missingTpdfOfType[j];
-        for (int i = 0; i < tpdfStore.size(); i++)
-        {
-            if (tpdfStore[i].name && avoidNull(tpdfStore[i].name) == name)
-            {
-                type->der = &tpdfStore[i];
-                break;
-            }
-        }
-    }
-    lys_type_info_lref *lref;
-    // assign leaf pointers and paths to leafrefs
-    // TODO: nodes must have unique names for this to work, find workaround
-    //for (tuple<string, lys_type_info_lref*> l : missingLeafsOfLeafrefs)
-    for (int j = 0; j < missingLeafsOfLeafrefs.size(); j++)
-    {
-        tie(name, lref) = missingLeafsOfLeafrefs[j];
-        for (int i = 0; i < nodeStore.size(); i++)
-        {
-            if (nodeStore[i] && avoidNull(nodeStore[i]->name) == name)
-            {
-                lref->target = (lys_node_leaf*)nodeStore[i].get();
-                lref->path = storeString(generatePath(nodeStore[i].get()));
-                break;
-            }
-        }
-    }
-*/
     return &module;
 }
 
@@ -2928,7 +2961,7 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
 
         shared_ptr<lys_node_container> cont(new lys_node_container());
         cont->nodetype = LYS_CONTAINER;
-        cont->presence = "presence";
+        //cont->presence = "presence";
         cont->name = storeString(things[i]->getName());
         cont->dsc = storeString(things[i]->getDescription());
 
@@ -2939,6 +2972,8 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
             n->parent = (lys_node*)cont.get();
 
         conts.push_back(storeNode((shared_ptr<lys_node>&)cont));
+        pathsToNodes[things[i]->generateReferenceString()] =
+                (lys_node*)cont.get();
 
         /*
         shared_ptr<lys_include[]> inc(
@@ -2965,7 +3000,7 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
 
         shared_ptr<lys_node_container> cont(new lys_node_container());
         cont->nodetype = LYS_CONTAINER;
-        cont->presence = "presence";
+        //cont->presence = "presence";
         cont->name = storeString(objects[i]->getName());
         cont->dsc = storeString(objects[i]->getDescription());
 
@@ -2976,10 +3011,14 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
             n->parent = (lys_node*)cont.get();
 
         conts.push_back(storeNode((shared_ptr<lys_node>&)cont));
+        pathsToNodes[objects[i]->generateReferenceString()] =
+                (lys_node*)cont.get();
     }
 
     for (int i = 0; i < conts.size(); i++)
+    {
         addNode(*conts[i], module);
+    }
 
     module.type = 0;
     module.deviated = 0;
@@ -2999,6 +3038,7 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
     module.dsc = storeString(thing.getDescription());
     convertInfoBlock(thing.getInfo(), module);
     convertNamespaceSection(thing.getNamespace(), module);
+    sdfRequiredToNode(thing.getRequired(), module);
 
     // assign open references in nodes and typedefs
     if (!thing.getParentThing())
@@ -3054,11 +3094,9 @@ int main(int argc, const char** argv)
     }
 
     // check whether input file is a YANG file
-    //if (std::regex_match(argv[1], yang_regex))
     if (std::regex_match(inputFileName, yang_regex))
     {
         // TODO: check whether output file has right format
-        //if (argc > 3 && !std::regex_match(argv[2], sdf_json_regex))
         if (outputFileName && !std::regex_match(outputFileName, sdf_json_regex))
         {
             cerr << "Incorrect output file format\n" << endl;
@@ -3066,13 +3104,9 @@ int main(int argc, const char** argv)
         }
 
         cout << "Parsing YANG module ";
-        // load the required context
-        //ly_ctx *ctx = ly_ctx_new(argv[3], 0);
         // load the module
-        //const lys_module *module = lys_parse_path(ctx, argv[1], LYS_IN_YANG);
         const lys_module *module =
                 lys_parse_path(ctx, inputFileName, LYS_IN_YANG);
-        //lys_print_path("test123.yang", module, LYS_OUT_YANG, "", 0, 0);
 
         if (module == NULL)
         {
@@ -3096,8 +3130,6 @@ int main(int argc, const char** argv)
         sdfObject *moduleObject = moduleToSdfObject(module);
         cout << "-> finished" << endl;
         string outputFileString;
-        //if (argc == 4)
-        //    outputFileName = argv[2];
         if (outputFileName)
             outputFileString = outputFileName;
         else
