@@ -103,8 +103,13 @@ vector<tuple<string, sdfCommon*>> assignRefs(
     for (tuple<string, sdfCommon*> r : unassignedRefs)
     {
         tie(name, com) = r;
-        if (com)
-            com->setReference(refToCommon(name));
+        sdfCommon *ref = refToCommon(name);
+        if (com && ref)
+        {
+            //com->setReference(refToCommon(name));
+            com->setReference(ref);
+            //cout << com->getName()+" refs "+ref->getName()<<endl;
+        }
 
         if (!com || !com->getReference())
             stillLeft.push_back(r);
@@ -1800,7 +1805,7 @@ void sdfCommon::jsonToCommon(json input)
             //this->reference = refToCommon(correctValue(it.value()));
             unassignedRefs.push_back(tuple<string, sdfCommon*>{
                 correctValue(it.value()), this});
-            //cout << correctValue(it.value()) << endl;
+            //cout << correctValue(it.value())+" "+this->getName() << endl;
         }
         else if (it.key() == "sdfRequired")
             for (auto jt : it.value())
@@ -1810,8 +1815,15 @@ void sdfCommon::jsonToCommon(json input)
                 unassignedReqs.push_back(tuple<string, sdfCommon*>{
                     correctValue(jt), this});
     }
-    existingDefinitons[this->generateReferenceString()] = this;
-    //cout << "!!!jsonToCommon: " << this->generateReferenceString() <<"!!!" << endl;
+    // check if this is the item constraint of an sdfData element
+    sdfData *data = this->getThisAsSdfData();
+    if (!data || !data->isItemConstr())
+    {
+        // if not, add to existing definitions
+        existingDefinitons[this->generateReferenceString()] = this;
+        //cout << "!!!jsonToCommon: " << this->generateReferenceString() <<" "
+        //    << this->getName()<< endl;
+    }
 }
 
 sdfData* sdfData::jsonToData(json input)
@@ -2198,7 +2210,7 @@ sdfProperty* sdfProperty::jsonToProperty(json input)
     return this;
 }
 
-sdfObject* sdfObject::jsonToObject(json input)
+sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
 {
     this->jsonToCommon(input);
     for (json::iterator it = input.begin(); it != input.end(); ++it)
@@ -2274,7 +2286,8 @@ sdfObject* sdfObject::jsonToObject(json input)
         }
         else if (it.key() == "sdfThing")
         {
-            cerr << "jsonToObject(): incorrect sdfObject (sdfThing found)"
+            if (!testForThing)
+                cerr << "jsonToObject(): incorrect sdfObject (sdfThing found)"
                     << endl;
             return NULL;
         }
@@ -2294,6 +2307,11 @@ sdfObject* sdfObject::jsonToObject(json input)
         // assign sdfRef and sdfRequired references
         unassignedRefs = assignRefs(unassignedRefs);
         unassignedReqs = assignRefs(unassignedReqs);
+
+        if (!unassignedRefs.empty() || !unassignedReqs.empty())
+            cerr << "There is/are "
+            + to_string(unassignedRefs.size()+unassignedReqs.size())
+            + " reference(s) left unassigned" << endl;
     }
     // jsonToCommon needs to be called twice because of sdfRequired
     // (which cannot be filled before the rest of the object)
@@ -2302,7 +2320,7 @@ sdfObject* sdfObject::jsonToObject(json input)
     return this;
 }
 
-sdfObject* sdfObject::fileToObject(string path)
+sdfObject* sdfObject::fileToObject(string path, bool testForThing)
 {
     json json_input;
     ifstream input(path);
@@ -2313,7 +2331,7 @@ sdfObject* sdfObject::fileToObject(string path)
     }
     else
         cerr << "Error opening file" << endl;
-    return this->jsonToObject(json_input);
+    return this->jsonToObject(json_input, testForThing);
 }
 
 sdfThing* sdfThing::jsonToThing(json input, bool nested)
@@ -2382,9 +2400,9 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
         unassignedReqs = assignRefs(unassignedReqs);
 
         if (!unassignedRefs.empty() || !unassignedReqs.empty())
-            cerr << "There are "
+            cerr << "There is/are "
             + to_string(unassignedRefs.size()+unassignedReqs.size())
-            + " references left unassigned" << endl;
+            + " reference(s) left unassigned" << endl;
     }
     //this->jsonToCommon(input);
     return this;
@@ -3288,4 +3306,9 @@ string sdfData::getConstantAsString()
     }
 
     return constStr;
+}
+
+sdfData* sdfCommon::getThisAsSdfData()
+{
+    return dynamic_cast<sdfData*>(this);
 }

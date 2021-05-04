@@ -79,6 +79,7 @@ public:
     //sdfCommon* getParentCommon();
     sdfData* getSdfDataReference() const;
     sdfData* getSdfPropertyReference() const;
+    sdfData* getThisAsSdfData();
     // setters
     void setName(std::string _name);
     void setLabel(std::string _label);
@@ -525,10 +526,13 @@ class sdfObject : virtual public sdfCommon
 {
 public:
     sdfObject(std::string _name = "", std::string _description = "",
-            sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {},
+            sdfCommon *_reference = NULL,
+            std::vector<sdfCommon*> _required = {},
             std::vector<sdfProperty*> _properties = {},
-            std::vector<sdfAction*> _actions = {}, std::vector<sdfEvent*> _events = {},
-            std::vector<sdfData*> _datatypes = {}, sdfThing *_parentThing = NULL);
+            std::vector<sdfAction*> _actions = {},
+            std::vector<sdfEvent*> _events = {},
+            std::vector<sdfData*> _datatypes = {},
+            sdfThing *_parentThing = NULL);
     virtual ~sdfObject();
     // setters
     void setInfo(sdfInfoBlock *_info);
@@ -548,11 +552,12 @@ public:
     sdfThing* getParentThing();
     // parsing
     std::string generateReferenceString();
-    nlohmann::json objectToJson(nlohmann::json prefix, bool print_info_namespace = true);
+    nlohmann::json objectToJson(nlohmann::json prefix,
+            bool print_info_namespace = true);
     std::string objectToString(bool print_info_namespace = true);
     void objectToFile(std::string path);
-    sdfObject* jsonToObject(nlohmann::json input);
-    sdfObject* fileToObject(std::string path);
+    sdfObject* jsonToObject(nlohmann::json input, bool testForThing = false);
+    sdfObject* fileToObject(std::string path, bool testForThing = false);
 
 private:
     nlohmann::json actionToJson();
@@ -570,8 +575,10 @@ class sdfThing : virtual public sdfCommon
 {
 public:
     sdfThing(std::string _name = "", std::string _description = "",
-            sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {},
-            std::vector<sdfThing*> _things = {}, std::vector<sdfObject*> _objects = {},
+            sdfCommon *_reference = NULL,
+            std::vector<sdfCommon*> _required = {},
+            std::vector<sdfThing*> _things = {},
+            std::vector<sdfObject*> _objects = {},
             sdfThing *_parentThing = NULL);
     virtual ~sdfThing();
     // setters
@@ -588,7 +595,8 @@ public:
     sdfThing* getParentThing() const;
     // parsing
     std::string generateReferenceString();
-    nlohmann::json thingToJson(nlohmann::json prefix, bool print_info_namespace = false);
+    nlohmann::json thingToJson(nlohmann::json prefix,
+            bool print_info_namespace = false);
     std::string thingToString(bool print_info_namespace = true);
     void thingToFile(std::string path);
     // TODO: jsonToThing return void?

@@ -2029,7 +2029,6 @@ void addNode(lys_node &child, lys_module &module)
 
 void removeNode(lys_node &node)
 {
-    cout << "remove node "+avoidNull(node.name) << endl;
     // if the node is not a top-level node
     if (node.parent)
     {
@@ -2077,13 +2076,15 @@ void removeNode(lys_node &node)
 lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
         bool nodeIsTpdf = false)
 {
-    cout << avoidNull(node->name) <<endl;
+    //cout << node <<" "+avoidNull(node->name) <<endl;
     if (!data)
         return NULL;
+    // TODO: investigate why some nodes do not have a module
+    // (and why that is not a problem?)
     if (!node->module)
     {
-        cerr << avoidNull(node->name) << " has no module" << endl;
-        return NULL;
+        cerr << "Node " + avoidNull(node->name) + " has no module" << endl;
+        //return NULL;
     }
 
     // getSimpType returns the type of the ref if there is one
@@ -2116,13 +2117,18 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                 type.info.lref.target = (lys_node_leaf*)nodeStore[i].get();
                 type.info.lref.path = storeString(
                         generatePath(nodeStore[i].get()));
-                cout << avoidNull(type.info.lref.path) << endl;
 
 //                missingLeafsOfLeafrefs.push_back(
 //                        tuple<string, lys_type_info_lref*>{ref->getName(),
 //                                      &((lys_node_leaf*)node)->type.info.lref});
 
                 ((lys_node_leaf*)node)->type = type;
+                // leafrefs to non-config leafs must have config false
+                if (nodeStore[i]->flags & LYS_CONFIG_R)
+                {
+                    node->flags |= LYS_CONFIG_R;
+                    node->flags |= LYS_CONFIG_SET;
+                }
             }
             else if (nodeStore[i]->nodetype == LYS_CONTAINER)
             {
@@ -2185,8 +2191,8 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
 
                 // lists must have config false statement otherwise they need
                 // a key
-                nodeStore[i]->flags &= LYS_CONFIG_R;
-                nodeStore[i]->flags += LYS_CONFIG_SET;
+                nodeStore[i]->flags |= LYS_CONFIG_R;
+                nodeStore[i]->flags |= LYS_CONFIG_SET;
 
                 //addNode((lys_node&)*uses, *node, module);
                 if (node->parent)
@@ -2242,7 +2248,6 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
             }
             else if (nodeStore[i]->nodetype == LYS_GROUPING)
             {
-                cout << "nodeStore[i] " << avoidNull(nodeStore[i]->name)<<endl;
                 // uses
                 shared_ptr<lys_node_uses> uses =
                         shared_ptr<lys_node_uses>(new lys_node_uses());
@@ -2361,15 +2366,8 @@ struct lys_tpdf* sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
     tpdf->dsc = storeString(data->getDescription());
     tpdf->ref = NULL;
     tpdf->ext_size = 0;
-    //tpdf->ref = NULL; // optional
-    //tpdf->flags = 0; // optional
-    //module->tpdf[cnt].ext_size = 0; // optional
-    //module->tpdf[cnt].padding_iffsize = 0; // optional
-    //module->tpdf[cnt].has_union_leafref = 0; // optional
-    //uint8_t pad[3] = {0};
-    //std::memcpy(module->tpdf[cnt].padding, pad, 3); // optional
     if (data->getUnits() != "")
-        tpdf->units = data->getUnitsAsArray(); // optional
+        tpdf->units = data->getUnitsAsArray();
 
     // type
     tpdf->type.parent = tpdf;
@@ -2382,8 +2380,6 @@ struct lys_tpdf* sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
     {
         openRefsTpdf.push_back(
              tuple<sdfData*, lys_tpdf*>{data, tpdf});
-        //openRefs.push_back(
-        //     tuple<sdfData*, lys_node*>{data, (lys_node*)tpdf});
     }
 
     pathsToNodes[data->generateReferenceString()] = (lys_node*)tpdf;
@@ -2405,7 +2401,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
     // type object -> container
     if (data->getSimpType() == json_object)
     {
-        cout << "container "+data->getName()<<endl;
+        //cout << "container "+data->getName()<<endl;
         shared_ptr<lys_node_container> cont =
                 shared_ptr<lys_node_container>(new lys_node_container());
         //lys_node_container *cont = new lys_node_container();
@@ -2430,8 +2426,6 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
         shared_ptr<lys_node_list> list =
                 shared_ptr<lys_node_list>(new lys_node_list());
         list->nodetype = LYS_LIST;
-//        list->min = data->getMinItems();
-//        list->max = data->getMaxItems();
         // TODO: do this? this is only done because of the way
         // sdfRefs to arrays with object items are translated into lists
         list->min = data->getMinItemsOfRef();
@@ -2474,7 +2468,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
         fillLysType(data->getItemConstr(), leaflist->type);
 
         if (data->getUnits() != "")
-            leaflist->units = data->getUnitsAsArray(); // optional
+            leaflist->units = data->getUnitsAsArray();
         //leaflist->dflt = (const char**)data->getDefaultAsCharArray();
 
         leaflist->min = data->getMinItems();
@@ -2492,7 +2486,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
         {
             shared_ptr<const char*[]> dflt(new const char*[dfltVec.size()]);
             voidPointerStore.push_back(dflt);
-            leaflist->dflt = dflt.get();//new const char*[dfltVec.size()];
+            leaflist->dflt = dflt.get();
             for (int i = 0; i < dfltVec.size(); i++)
                 leaflist->dflt[i] = storeString(dfltVec[i]);
             leaflist->dflt_size = dfltVec.size();
@@ -2572,7 +2566,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
 
     // TODO: none of the nodes are configuration data, right?
     // if they would be this poses problems with lists (even as child nodes)
-    // which then need keys
+    // which would then need keys
     node->flags += LYS_CONFIG_R;
 
     // TODO: sdfRequired to mandatory
@@ -2581,54 +2575,28 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module)
 
     if (data->getReference())
     {
-        //        node = sdfRefToNode(data, node, module);
         openRefs.push_back(tuple<sdfData*, lys_node*>{data, node});
-        cout << node << "????"+avoidNull(node->name)<<endl;
     }
 
     return node;
 }
 
 void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
-{/*
-    shared_ptr<lys_tpdf[]> tpdfs(
-            new lys_tpdf[module.tpdf_size + datatypes.size()]());
-
-    // transfer the contents of the existing tpdf array
-    for (int i = 0; i < module.tpdf_size; i++)
-        tpdfs[i] = module.tpdf[i];
-
-    uint16_t cnt = module.tpdf_size;
-    voidPointerStore.push_back(tpdfs);
-    module.tpdf = tpdfs.get();
-*/
+{
     uint16_t cnt = tpdfStore.size();
     sdfData *data;
     for (int i = 0; i < datatypes.size(); i++)
     {
         data = datatypes[i];
+        // if the datatype is not of type array or object create a typedef
         if (data->getObjectPropertiesOfRefs().empty()
                 && !data->getItemConstrOfRefs()
                 && data->getSimpType() != json_object
                 && data->getSimpType() != json_array)
         {
-            //sdfDataToTypedef(i, &module.tpdf[cnt]);
-            //module.tpdf[cnt].module = &module;
-            //tpdfStore.push_back(module.tpdf[cnt]);
-
-            //module.tpdf[cnt] = {};
-            //sdfDataToTypedef(data, module.tpdf[cnt]);
-            //module.tpdf[cnt].module = &module;
             shared_ptr<lys_tpdf> t(new lys_tpdf());
             t = make_shared<lys_tpdf>(*sdfDataToTypedef(data, t.get()));
             t->module = &module;
-            //module.tpdf[cnt] = *storeTypedef(tpdf);
-            /*
-            lys_tpdf tpdf = {};
-            sdfDataToTypedef(i, &tpdf);
-            tpdf.module = &module;
-            module.tpdf[cnt] = *storeTypedef(tpdf);
-            */
             cnt++;
         }
         // else create a grouping
@@ -2640,7 +2608,7 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
 
             // the following is discarded for now
             // (not putting a whole list into the grouping but instead putting
-            // the nodes of the list into a grouping)--------
+            // the nodes of the list into a grouping)
             /*if (child->nodetype == LYS_LIST)
             {
                 *grp = (lys_node_grp&)*child;
@@ -2652,12 +2620,10 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
             else*/
             if (child->nodetype == LYS_CONTAINER)
             {
-                cout <<"cont " +avoidNull(child->name) <<endl;
                 grp = make_shared<lys_node_grp>((lys_node_grp&)*child);
             }
             else
             {
-                cout <<"else " + avoidNull(child->name) <<endl;
                 addNode(*child, (lys_node&)*grp, module);
             }
 
@@ -2668,13 +2634,13 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
             pathsToNodes[data->generateReferenceString()] =
                     (lys_node*)grp.get();
 
-            cout << grp->child<< " new grouping " << generatePath((lys_node*)grp.get()) << endl;
+            //cout << grp.get()<< " new grouping "
+            //        << generatePath((lys_node*)grp.get()) << endl;
         }
     }
 
     // TODO: should the typedef always be on top-level so it can be reached
     // from everywhere (scoping)?
-    //module.tpdf_size = cnt;
 }
 
 void convertInfoBlock(sdfInfoBlock *info, lys_module &module)
@@ -2723,8 +2689,41 @@ void convertNamespaceSection(sdfNamespaceSection *ns, lys_module &module)
     module.ns = ns->getNamespacesAsArrays().begin()->second;
 }
 
-struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module,
-        bool nested = false)
+void assignOpenRefs(lys_module &module)
+{
+    // assign open references in nodes
+    sdfData *d;
+    lys_node *n;
+    vector<tuple<sdfData*, lys_node*>> stillLeft = {};
+    for (int i = 0; i < openRefs.size(); i++)
+    {
+        tie(d, n) = openRefs[i];
+        if (!sdfRefToNode(d, n, module))
+            stillLeft.push_back(openRefs[i]);
+    }
+    openRefs = stillLeft;
+
+    // assign open references in typedefs
+    lys_tpdf* t;
+    vector<tuple<sdfData*, lys_tpdf*>> stillLeftTpdf = {};
+    for (int i = 0; i < openRefsTpdf.size(); i++)
+    {
+        tie(d, t) = openRefsTpdf[i];
+        if (!sdfRefToNode(d, (lys_node*)t, module, true))
+            stillLeftTpdf.push_back(openRefsTpdf[i]);
+    }
+    openRefsTpdf = stillLeftTpdf;
+
+    if (!openRefs.empty())
+        cerr << "There is/are " + to_string(openRefs.size())
+        + " node(s) with an unassigned reference" << endl;
+
+    if (!openRefsTpdf.empty())
+        cerr << "There is/are " + to_string(openRefsTpdf.size())
+        + " typedef(s) with an unassigned reference" << endl;
+}
+
+struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 {
     module.type = 0;
     module.deviated = 0;
@@ -2744,86 +2743,22 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module,
     module.dsc = storeString(object.getDescription());
     convertInfoBlock(object.getInfo(), module);
     convertNamespaceSection(object.getNamespace(), module);
-    /*
-    // title has to be altered
-    sdfInfoBlock *info = object.getInfo();
-    string title = info->getTitle();
-    // All special characters (like '(') have to be removed from the title
-    title.resize(remove_if(title.begin(), title.end(),
-            [](char x){return !isalnum(x) && !isspace(x);})-title.begin());
-    // Spaces are replaced by '-'
-    replace(title.begin(), title.end(), ' ', '-');
-    // All characters in the title have to be lower case
-    for (int i = 0; i < title.length(); i++)
-        title[i] = tolower(title[i]);
-    module.name = storeString(title);
-
-    // copyright and license of SDF are put into the module's description
-    string dsc = info->getTitle()
-            + "\n\n" + object.getDescription()
-            + "\n\nCopyright: " + info->getCopyright()
-            + "\nLicense: " + info->getLicense();
-
-    module.dsc = storeString(dsc);
-    module.org = info->getCopyrightAsArray();
-
-    lys_revision *rev = new lys_revision();
-    revStore.push_back(*rev);
-    delete rev;
-    module.rev = &revStore.back();
-    strncpy(module.rev[0].date, storeString(info->getVersion()),
-            sizeof(module.rev[0].date));
-    module.rev_size = 1;
-
-    sdfNamespaceSection *ns = object.getNamespace();
-    module.prefix = ns->getNamespacesAsArrays().begin()->first;
-    module.ns = ns->getNamespacesAsArrays().begin()->second;
-    module.ref = "";
-    module.contact = "";
-    */
 
     // convert datatypes to typedefs or groupings
     convertDatatypes(object.getDatatypes(), module);
 
-    /*lys_node_container props = {
-            .name = "properties",
-            .dsc = "The translated sdfProperties",
-            //.ref = NULL,
-            //.flags = 0,
-            //.ext_size = 0,
-            //.iffeature_size = 0,
-            //.must_size = 0,
-            //.tpdf_size = 0,
-            .module = &module,
-            .nodetype = LYS_CONTAINER,
-            //.parent = NULL,
-            //.child = NULL,
-            //.next = NULL,
-            .prev = (lys_node*)&props,
-            //.priv = NULL,
-            //.when = NULL,
-            //.must = NULL,
-            //.tpdf = NULL,
-            //.presence = NULL
-    };
-    shared_ptr<lys_node_container> propsCont =
-            make_shared<lys_node_container>(props);
-    addNode(*storeNode((shared_ptr<lys_node>&)propsCont), module);
-*/
     vector<sdfProperty*> properties = object.getProperties();
     lys_node *currentNode;
     for (sdfProperty *i : object.getProperties())
     {
-        currentNode = NULL;//new lys_node();
+        currentNode = NULL;
         currentNode = sdfDataToNode(i, currentNode, module);
         // add the current node into the tree
-        //addNode(*currentNode, (lys_node&)*propsCont, module);
         addNode(*currentNode, module);
     }
 
     vector<sdfAction*> actions = object.getActions();
     sdfAction *i;
-    //for (sdfAction *i : object.getActions())
     for (int j = 0; j < actions.size(); j++)
     {
         i = actions[j];
@@ -2931,31 +2866,9 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module,
         // TODO
     }
 
-    if (!nested)
-    {
-        // assign open references in nodes
-        sdfData *d;
-        lys_node *n;
-        vector<tuple<sdfData*, lys_node*>> stillLeft = {};
-        for (int i = 0; i < openRefs.size(); i++)
-        {
-            tie(d, n) = openRefs[i];
-            if (!sdfRefToNode(d, n, module))
-                stillLeft.push_back(openRefs[i]);
-        }
-        openRefs = stillLeft;
-
-        // assign open references in typedefs
-        lys_tpdf* t;
-        vector<tuple<sdfData*, lys_tpdf*>> stillLeftTpdf = {};
-        for (int i = 0; i < openRefsTpdf.size(); i++)
-        {
-            tie(d, t) = openRefsTpdf[i];
-            if (!sdfRefToNode(d, (lys_node*)t, module, true))
-                stillLeftTpdf.push_back(openRefsTpdf[i]);
-        }
-        openRefsTpdf = stillLeftTpdf;
-    }
+    // assign open references in nodes and typedefs
+    if (!object.getParentThing())
+        assignOpenRefs(module);
 
     module.tpdf = tpdfStore.data();
     module.tpdf_size = tpdfStore.size();
@@ -3001,8 +2914,7 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module,
 /*
  * The information from a sdfThing is transferred into a YANG module
  */
-struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module,
-        bool nested = false)
+struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
 {
     vector<sdfThing*> things = thing.getThings();
     vector<sdfObject*> objects = thing.getObjects();
@@ -3011,8 +2923,8 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module,
 
     for (int i = 0; i < things.size(); i++)
     {
-        cout << things[i]->getName() << endl;
-        sdfThingToModule(*things[i], module, true);
+        //cout << things[i]->getName() << endl;
+        sdfThingToModule(*things[i], module);
 
         shared_ptr<lys_node_container> cont(new lys_node_container());
         cont->nodetype = LYS_CONTAINER;
@@ -3048,8 +2960,8 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module,
 
     for (int i = 0; i < objects.size(); i++)
     {
-        cout << objects[i]->getName() << endl;
-        sdfObjectToModule(*objects[i], module, true);
+        //cout << objects[i]->getName() << endl;
+        sdfObjectToModule(*objects[i], module);
 
         shared_ptr<lys_node_container> cont(new lys_node_container());
         cont->nodetype = LYS_CONTAINER;
@@ -3068,12 +2980,6 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module,
 
     for (int i = 0; i < conts.size(); i++)
         addNode(*conts[i], module);
-
-    if (!nested)
-    {
-        cout << "!!!!"+avoidNull(module.data->child->child->next->name)<<endl;
-        cout << generatePath(module.data->child->child->next) << endl;
-    }
 
     module.type = 0;
     module.deviated = 0;
@@ -3094,33 +3000,9 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module,
     convertInfoBlock(thing.getInfo(), module);
     convertNamespaceSection(thing.getNamespace(), module);
 
-    if (!nested)
-    {
-        // assign open references in nodes
-        sdfData *d;
-        lys_node *n;
-        vector<tuple<sdfData*, lys_node*>> stillLeft = {};
-        for (int i = 0; i < openRefs.size(); i++)
-        {
-            tie(d, n) = openRefs[i];
-            cout << "1"+generatePath(n) << endl;
-            if (!sdfRefToNode(d, n, module))
-                stillLeft.push_back(openRefs[i]);
-        }
-        openRefs = stillLeft;
-
-        // assign open references in typedefs
-        lys_tpdf* t;
-        vector<tuple<sdfData*, lys_tpdf*>> stillLeftTpdf = {};
-        for (int i = 0; i < openRefsTpdf.size(); i++)
-        {
-            tie(d, t) = openRefsTpdf[i];
-            cout << "2"+generatePath(n) << endl;
-            //if (!sdfRefToNode(d, (lys_node*)t, module, true))
-            //    stillLeftTpdf.push_back(openRefsTpdf[i]);
-        }
-        openRefsTpdf = stillLeftTpdf;
-    }
+    // assign open references in nodes and typedefs
+    if (!thing.getParentThing())
+        assignOpenRefs(module);
 
     return &module;
 }
@@ -3284,7 +3166,7 @@ int main(int argc, const char** argv)
         cout << "Loading SDF JSON file" << endl;
         validateFile(inputFileName);
 
-        if (moduleObject.fileToObject(inputFileName) != NULL)
+        if (moduleObject.fileToObject(inputFileName, true) != NULL)
         {
             cout << "Loading SDF JSON file -> finished" << endl;
             //cout
