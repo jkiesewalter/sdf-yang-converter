@@ -3064,6 +3064,8 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
         for (lys_node *n = cont->child; n != NULL; n = n->next)
             n->parent = (lys_node*)cont.get();
 
+        setSdfSpecExtension((lys_node*)cont.get(), "sdfObject");
+
         conts.push_back(storeNode((shared_ptr<lys_node>&)cont));
         pathsToNodes[objects[i]->generateReferenceString()] =
                 (lys_node*)cont.get();
