@@ -47,6 +47,7 @@ vector<tuple<sdfData*, lys_tpdf*>> openRefsTpdf; // sdfRefs still open for tpdfs
 vector<lys_tpdf> tpdfStore;
 vector<lys_restr> restrStore;
 vector<shared_ptr<void>> voidPointerStore;
+lys_module *helper;
 
 /*
  * vector of tuples with typedef names and types that reference those typedefs
@@ -157,6 +158,18 @@ lys_tpdf* storeTypedef(lys_tpdf &tpdf)
     }
     tpdfStore.push_back(tpdf);
     return &tpdfStore.back();
+}
+
+void* storeVoidPointer(shared_ptr<void> v)
+{
+    if (voidPointerStore.size() == voidPointerStore.max_size())
+    {
+        cerr << "storeTvoidPointer: vector is full, "
+                "cannot store more void pointers" << endl;
+        return NULL;
+    }
+    voidPointerStore.push_back(v);
+    return voidPointerStore.back().get();
 }
 
 
@@ -1739,6 +1752,30 @@ sdfThing* submoduleToSdfThing(struct lys_submodule *submodule)
 // XPath expressions?
 // TODO: YANG union to sdfChoice over type! What about bits, binary?
 
+void setSdfSpecExtension(lys_node *node, string arg)
+{
+    shared_ptr<lys_ext_instance*[]> exts(new lys_ext_instance*[1]());
+    shared_ptr<lys_ext_instance> ext(new lys_ext_instance());
+
+    exts[0] = (lys_ext_instance*)storeVoidPointer((shared_ptr<void>)ext);
+    node->ext = (lys_ext_instance**)storeVoidPointer((shared_ptr<void>)exts);
+    node->ext_size = 1;
+
+    //exts[0] = helper->data->ext[0];
+    exts[0]->def = &helper->extensions[0];
+    exts[0]->parent = (void*)node;
+    exts[0]->arg_value = storeString(arg);
+    exts[0]->flags = 0;
+    exts[0]->ext_size = 0;
+    exts[0]->insubstmt_index = 0;
+    exts[0]->insubstmt = 0;
+    exts[0]->parent_type = 1;
+    exts[0]->ext_type = LYEXT_FLAG;
+    exts[0]->ext = NULL;
+    exts[0]->module = node->module;
+    exts[0]->nodetype = LYS_EXT;
+}
+
 /*
  * RFC 7950 3. Terminology: A mandatory node is
  * a leaf/choice/anydata/anyxml node with "mandatory true",
@@ -2795,21 +2832,33 @@ void assignOpenRefs(lys_module &module)
         + " typedef(s) with an unassigned reference" << endl;
 }
 
+void importHelper(lys_module &module)
+{
+    module.imp_size += 1;
+    shared_ptr<lys_import[]> imp(new lys_import[1]());
+    module.imp = (lys_import*)storeVoidPointer((shared_ptr<void>)imp);
+    module.imp[0].module = helper;
+    module.imp[0].prefix = helper->prefix;
+}
+
 struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 {
     module.type = 0;
     module.deviated = 0;
-    module.imp_size = 0;
+    //module.imp_size = 0;
     module.inc_size = 0;
     module.ident_size = 0;
     module.features_size = 0;
     module.augment_size = 0;
     module.deviation_size = 0;
     module.extensions_size = 0;
-    module.ext_size = 0;
+    //module.ext_size = 0;
     module.ref = "";
     module.contact = "";
     module.version = YANG_VERSION;
+
+    if (!object.getParentThing())
+        importHelper(module);
 
     module.name = storeString(object.getName());
     module.dsc = storeString(object.getDescription());
@@ -2954,6 +3003,9 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
     vector<lys_node*> conts;
     conts.reserve(objects.size() + things.size());
 
+    if (!thing.getParentThing())
+        importHelper(module);
+
     for (int i = 0; i < things.size(); i++)
     {
         //cout << things[i]->getName() << endl;
@@ -2970,6 +3022,8 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
 
         for (lys_node *n = cont->child; n != NULL; n = n->next)
             n->parent = (lys_node*)cont.get();
+
+        setSdfSpecExtension((lys_node*)cont.get(), "sdfThing");
 
         conts.push_back(storeNode((shared_ptr<lys_node>&)cont));
         pathsToNodes[things[i]->generateReferenceString()] =
@@ -3016,20 +3070,18 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
     }
 
     for (int i = 0; i < conts.size(); i++)
-    {
         addNode(*conts[i], module);
-    }
 
     module.type = 0;
     module.deviated = 0;
-    module.imp_size = 0;
+    //.imp_size = 0;
     module.inc_size = 0;
     module.ident_size = 0;
     module.features_size = 0;
     module.augment_size = 0;
     module.deviation_size = 0;
     module.extensions_size = 0;
-    module.ext_size = 0;
+    //module.ext_size = 0;
     module.ref = "";
     module.contact = "";
     module.version = YANG_VERSION;
@@ -3194,6 +3246,15 @@ int main(int argc, const char** argv)
         restrStore.reserve(500);
         openRefs.reserve(500);
         openRefsTpdf.reserve(500);
+
+        cout << "Parsing YANG conversion helper module 'sdf_extension.yang'";
+        helper = const_cast<lys_module*>(lys_parse_path(
+                ctx, "sdf_extension.yang", LYS_IN_YANG));
+
+        if (helper == NULL)
+            cerr << "-> failed" << endl;
+        else
+            cout << "-> succeeded" << endl;
 
         cout << "Loading SDF JSON file" << endl;
         validateFile(inputFileName);
