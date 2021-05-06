@@ -7,8 +7,12 @@ using namespace std;
 
 
 map<string, sdfCommon*> existingDefinitons;
+map<string, sdfCommon*> existingDefinitonsGlobal;
 vector<tuple<string, sdfCommon*>> unassignedRefs;
 vector<tuple<string, sdfCommon*>> unassignedReqs;
+
+bool contextLoaded = false;
+bool isContext = true;
 
 string jsonDTypeToString(jsonDataType type)
 {
@@ -64,6 +68,43 @@ jsonDataType stringToJsonDType(string str)
     return json_type_undef;
 }
 
+void loadContext(const char *path = ".")
+{
+    contextLoaded = true;
+
+    DIR *dir;
+    struct dirent *ent;
+    if ((dir = opendir (path)) != NULL)
+    {
+        std::regex sdfRegex (".*\\.sdf\\.json");
+        string fileName = "";
+        vector<string> names;
+        while ((ent = readdir (dir)) != NULL)
+        {
+            fileName = string(ent->d_name);
+            if (regex_match(fileName, sdfRegex))
+                names.push_back(fileName);
+        }
+        closedir (dir);
+
+        sdfObject o;
+        sdfThing t;
+        for (int i = 0; i < names.size(); i++)
+        {
+            o.fileToObject(names[i], true);
+            t.fileToThing(names[i]);
+        }
+    }
+    else
+    {
+        //could not open directory
+        cerr << "-> failed: ";
+        perror ("");
+    }
+
+    isContext = false;
+}
+
 sdfCommon* refToCommon(string ref)
 {
     /*
@@ -72,12 +113,26 @@ sdfCommon* refToCommon(string ref)
     regex_match(ref, sm, split_regex);
     cout << sm[2] << endl;
     */
-    regex sameNsRegex("#/.*");
-    if (!regex_match(ref, sameNsRegex))
+    //regex sameNsRegex("#/.*");
+    //if (!regex_match(ref, sameNsRegex))
+    if (existingDefinitonsGlobal[ref] != NULL)
     {
-        cerr << "refToCommon(): definition for reference " << ref
-                << " from different namespace could not be loaded" << endl;
-        return NULL;
+        //cout << "refToCommon(): trying to load definition for reference "
+        //        << ref  << " from different namespace" << endl;
+
+        return existingDefinitonsGlobal[ref];
+
+        /*smatch sm;
+        //regex diffNsRegex("(.*):/.*");
+        regex diffNsRegex("([\\w\\d]+):/.*");
+        if (regex_match(ref, sm, diffNsRegex))
+        {
+            cout << "match found" << endl;
+            for (auto i : sm)
+                cout << i << endl;
+
+        }*/
+
     }
     else if (existingDefinitons[ref] != NULL)
     {
@@ -140,9 +195,9 @@ string correctValue(string val)
 }
 
 sdfCommon::sdfCommon(string _name, string _description, sdfCommon *_reference,
-        vector<sdfCommon*> _required)
+        vector<sdfCommon*> _required, sdfFile *_file)
             : description(_description), name(_name), reference(_reference),
-              required(_required)
+              required(_required), parentFile(_file)
 {
     label = "";
     //this->parent = NULL;
@@ -159,6 +214,7 @@ sdfCommon::~sdfCommon()
 
     // reference cannot be deleted, see above explanation
     reference = NULL;
+    parentFile = NULL;
 }
 
 void sdfCommon::setLabel(string _label)
@@ -342,6 +398,17 @@ map<string, string> sdfNamespaceSection::getNamespaces()
 string sdfNamespaceSection::getDefaultNamespace()
 {
     return default_ns;
+}
+
+
+std::string sdfNamespaceSection::getNamespaceString() const
+{
+    if (default_ns != "")
+        return default_ns;
+    else if (!namespaces.empty())
+        return namespaces.begin()->first;
+    else
+        return "";
 }
 
 json sdfNamespaceSection::namespaceToJson(json prefix)
@@ -2216,6 +2283,30 @@ sdfProperty* sdfProperty::jsonToProperty(json input)
     return this;
 }
 
+void sdfNamespaceSection::makeDefinitionsGlobal()
+{
+    // insert all definitions of this element into the global definitions
+    // and add the default prefix to path
+    string newRef;
+    map<string, sdfCommon*>::iterator it = existingDefinitons.begin();
+    for (it = existingDefinitons.begin(); it != existingDefinitons.end(); it++)
+    {
+        newRef = it->first;
+        regex hashSplit ("#(.*)");
+        smatch sm;
+        if (regex_match(newRef, sm, hashSplit)
+                && this->getDefaultNamespace() != "")
+        {
+            newRef = this->getDefaultNamespace() + ":" + string(sm[1]);
+
+            existingDefinitonsGlobal[newRef] = it->second;
+            cout << newRef << endl;
+        }
+    }
+
+    existingDefinitons.clear();
+}
+
 sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
 {
     this->jsonToCommon(input);
@@ -2235,6 +2326,12 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
         // for first level
         else if (it.key() == "sdfObject" && !it.value().empty())
         {
+            // if we are just loading the context, ignore objects that do not
+            // have a default namespace and hence do not contribute to the
+            // global namespace
+            if (isContext && !this->getParentThing() && (!this->getNamespace()
+                        || this->getNamespace()->getDefaultNamespace() == ""))
+                return NULL;
             for (json::iterator jt = it.value().begin();
                     jt != it.value().end(); ++jt)
             {
@@ -2308,7 +2405,7 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
 
     // only try to assign refs when this is a top level object
     // TODO: if there was a 'top level structure' do that there
-    if (!this->getParentThing())
+    if (!this->getParentThing() && !this->getParentFile())
     {
         // assign sdfRef and sdfRequired references
         unassignedRefs = assignRefs(unassignedRefs, REF);
@@ -2318,6 +2415,15 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
             cerr << "There is/are "
             + to_string(unassignedRefs.size()+unassignedReqs.size())
             + " reference(s) left unassigned" << endl;
+
+        if (isContext)
+        {
+            unassignedRefs = {};
+            unassignedReqs = {};
+
+            if (this->getNamespace())
+                this->getNamespace()->makeDefinitionsGlobal();
+        }
     }
     // jsonToCommon needs to be called twice because of sdfRequired
     // (which cannot be filled before the rest of the object)
@@ -2328,6 +2434,9 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
 
 sdfObject* sdfObject::fileToObject(string path, bool testForThing)
 {
+    if (!contextLoaded)
+        loadContext();
+
     json json_input;
     ifstream input(path);
     if (input)
@@ -2343,7 +2452,6 @@ sdfObject* sdfObject::fileToObject(string path, bool testForThing)
 sdfThing* sdfThing::jsonToThing(json input, bool nested)
 {
     this->jsonToCommon(input);
-    sdfObject *childObject;
 
     for (json::iterator it = input.begin(); it != input.end(); ++it)
     {
@@ -2364,6 +2472,12 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
         }
         else if (it.key() == "sdfThing" && !it.value().empty())
         {
+            // if we are just loading the context, ignore things that do not
+            // have a default namespace and hence do not contribute to the
+            // global namespace
+            if (isContext && !nested && (!this->getNamespace()
+                    || this->getNamespace()->getDefaultNamespace() == ""))
+                return NULL;
             for (json::iterator jt = it.value().begin();
                     jt != it.value().end(); ++jt)
             {
@@ -2391,7 +2505,7 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
             for (json::iterator jt = it.value().begin();
                     jt != it.value().end(); ++jt)
             {
-                childObject = new sdfObject();
+                sdfObject *childObject = new sdfObject();
                 childObject->setName(correctValue(jt.key()));
                 this->addObject(childObject);
                 childObject->jsonToObject(input["sdfObject"][jt.key()]);
@@ -2399,7 +2513,7 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
         }
     }
     // only try to assign refs if this thing is at the top level
-    if (!nested)
+    if (!nested || (!this->getParentThing() && !this->getParentFile()))
     {
         // assign sdfRef and sdfRequired references
         unassignedRefs = assignRefs(unassignedRefs, REF);
@@ -2409,6 +2523,15 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
             cerr << "There is/are "
             + to_string(unassignedRefs.size()+unassignedReqs.size())
             + " reference(s) left unassigned" << endl;
+
+        if (isContext)
+        {
+            unassignedRefs = {};
+            unassignedReqs = {};
+
+            if (this->getNamespace())
+                this->getNamespace()->makeDefinitionsGlobal();
+        }
     }
     //this->jsonToCommon(input);
     return this;
@@ -2416,6 +2539,9 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
 
 sdfThing* sdfThing::fileToThing(string path)
 {
+    if (!contextLoaded)
+        loadContext();
+
     json json_input;
     ifstream input(path);
     if (input)
@@ -2952,6 +3078,11 @@ const char* sdfCommon::getNameAsArray() const
     return NULL;
 }
 
+sdfFile* sdfCommon::getParentFile() const
+{
+    return parentFile;
+}
+
 void sdfCommon::setName(std::string _name)
 {
     name = _name;
@@ -3317,4 +3448,349 @@ string sdfData::getConstantAsString()
 sdfData* sdfCommon::getThisAsSdfData()
 {
     return dynamic_cast<sdfData*>(this);
+}
+
+void sdfCommon::setParentFile(sdfFile *file)
+{
+    parentFile = file;
+}
+
+sdfFile::sdfFile()
+{
+    info = new sdfInfoBlock();
+    ns = new sdfNamespaceSection();
+    things = {};
+    objects = {};
+    properties = {};
+    actions = {};
+    events = {};
+    datatypes = {};
+}
+
+sdfFile::~sdfFile()
+{
+    delete info;
+    info = NULL;
+    delete ns;
+    ns = NULL;
+
+    for (sdfThing *i : things)
+    {
+        delete i;
+        i = NULL;
+    }
+    things.clear();
+
+    for (sdfObject *i : objects)
+    {
+        delete i;
+        i = NULL;
+    }
+    objects.clear();
+
+    for (sdfProperty *i : properties)
+    {
+        delete i;
+        i = NULL;
+    }
+    properties.clear();
+
+    for (sdfAction *i : actions)
+    {
+        delete i;
+        i = NULL;
+    }
+    actions.clear();
+
+    for (sdfEvent *i : events)
+    {
+        delete i;
+        i = NULL;
+    }
+    events.clear();
+
+    for (sdfData *i : datatypes)
+    {
+        delete i;
+        i = NULL;
+    }
+    datatypes.clear();
+
+}
+
+void sdfFile::setInfo(sdfInfoBlock *_info)
+{
+    info = _info;
+}
+
+void sdfFile::setNamespace(sdfNamespaceSection *_ns)
+{
+    ns = _ns;
+}
+
+void sdfFile::addThing(sdfThing *thing)
+{
+    thing->setParentThing(NULL);
+    thing->setParentFile(this);
+    things.push_back(thing);
+}
+
+void sdfFile::addObject(sdfObject *object)
+{
+    object->setParentThing(NULL);
+    object->setParentFile(this);
+    objects.push_back(object);
+}
+
+void sdfFile::addProperty(sdfProperty *property)
+{
+    property->setParentCommon(NULL);
+    property->setParentObject(NULL);
+    property->setParentFile(this);
+    properties.push_back(property);
+}
+
+void sdfFile::addAction(sdfAction *action)
+{
+    action->setParentObject(NULL);
+    action->setParentFile(this);
+    actions.push_back(action);
+}
+
+void sdfFile::addEvent(sdfEvent *event)
+{
+    event->setParentObject(NULL);
+    event->setParentFile(this);
+    events.push_back(event);
+}
+
+void sdfFile::addDatatype(sdfData *datatype)
+{
+    datatype->setParentCommon(NULL);
+    datatype->setParentFile(this);
+    datatypes.push_back(datatype);
+}
+
+sdfInfoBlock* sdfFile::getInfo() const
+{
+    return info;
+}
+
+sdfNamespaceSection* sdfFile::getNamespace() const
+{
+    return ns;
+}
+
+std::vector<sdfThing*> sdfFile::getThings() const
+{
+    return things;
+}
+
+std::vector<sdfObject*> sdfFile::getObjects() const
+{
+    return objects;
+}
+
+std::vector<sdfProperty*> sdfFile::getProperties()
+{
+    return properties;
+}
+
+std::vector<sdfAction*> sdfFile::getActions()
+{
+    return actions;
+}
+
+std::vector<sdfEvent*> sdfFile::getEvents()
+{
+    return events;
+}
+
+std::vector<sdfData*> sdfFile::getDatatypes()
+{
+    return datatypes;
+}
+
+std::string sdfFile::generateReferenceString()
+{
+    return "#/";
+}
+
+nlohmann::json sdfFile::toJson(nlohmann::json prefix)
+{
+    // print info if specified by print_info
+    if (this->info != NULL)
+        prefix = this->info->infoToJson(prefix);
+    if (this->ns != NULL)
+        prefix = this->ns->namespaceToJson(prefix);
+
+    for (sdfThing *i : things)
+        prefix += i->thingToJson(prefix, false);
+
+    for (sdfObject *i : objects)
+        prefix += i->objectToJson(prefix, false);
+
+    for (sdfData *i : datatypes)
+        prefix += i->dataToJson(prefix);
+
+    for (sdfProperty *i : properties)
+        prefix += i->propertyToJson(prefix);
+
+    for (sdfAction *i : actions)
+        prefix += i->actionToJson(prefix);
+
+    for (sdfEvent *i : events)
+        prefix += i->eventToJson(prefix);
+
+    return prefix;
+}
+
+std::string sdfFile::toString()
+{
+    json json_output;
+    return this->toJson(json_output).dump(INDENT_WIDTH);
+}
+void sdfFile::toFile(std::string path)
+{
+    ofstream output(path);
+    if (output)
+    {
+        output << this->toString() << endl;
+        output.close();
+    }
+    else
+        cerr << "Error opening file" << endl;
+
+    validateFile(path);
+}
+
+sdfFile* sdfFile::fromJson(nlohmann::json input)
+{
+    for (json::iterator it = input.begin(); it != input.end(); ++it)
+    {
+        if (it.key() == "info" && !it.value().empty())
+        {
+            this->setInfo(new sdfInfoBlock());
+            info->jsonToInfo(input["info"]);
+        }
+        else if (it.key() == "namespace" && !it.value().empty())
+        {
+            this->setNamespace(new sdfNamespaceSection());
+            ns->jsonToNamespace(input);
+        }
+        else if (it.key() == "defaultNamespace" && !it.value().empty())
+        {
+            ns->jsonToNamespace(input["namespace"]);
+        }
+        else if (it.key() == "sdfThing" && !it.value().empty())
+        {
+            // if we are just loading the context, ignore things that do not
+            // have a default namespace and hence do not contribute to the
+            // global namespace
+            if (isContext && (!this->getNamespace()
+                    || this->getNamespace()->getDefaultNamespace() == ""))
+                return NULL;
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
+            {
+                sdfThing *childThing = new sdfThing();
+                childThing->setName(correctValue(jt.key()));
+                this->addThing(childThing);
+                childThing->jsonToThing(input["sdfThing"][jt.key()], true);
+            }
+        }
+        else if (it.key() == "sdfObject" && !it.value().empty())
+        {
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
+            {
+                sdfObject *childObject = new sdfObject();
+                childObject->setName(correctValue(jt.key()));
+                this->addObject(childObject);
+                childObject->jsonToObject(input["sdfObject"][jt.key()], true);
+            }
+        }
+        else if (it.key() == "sdfProperty" && !it.value().empty())
+        {
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
+            {
+                sdfProperty *childProperty = new sdfProperty();
+                this->addProperty(childProperty);
+                childProperty->setName(correctValue(jt.key()));
+                childProperty->jsonToProperty(input["sdfProperty"][jt.key()]);
+            }
+        }
+        else if (it.key() == "sdfAction" && !it.value().empty())
+        {
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
+            {
+                sdfAction *childAction = new sdfAction();
+                this->addAction(childAction);
+                childAction->setName(correctValue(jt.key()));
+                childAction->jsonToAction(input["sdfAction"][jt.key()]);
+            }
+        }
+        else if (it.key() == "sdfEvent" && !it.value().empty())
+        {
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
+            {
+                sdfEvent *childEvent =  new sdfEvent();
+                this->addEvent(childEvent);
+                // TODO: with label set this way, a label will be printed
+                // even though there was just a "title" in the original
+                childEvent->setName(correctValue(jt.key()));
+                childEvent->jsonToEvent(input["sdfEvent"][jt.key()]);
+            }
+        }
+        else if (it.key() == "sdfData" && !it.value().empty())
+        {
+            for (json::iterator jt = it.value().begin();
+                    jt != it.value().end(); ++jt)
+            {
+                sdfData *childData = new sdfData();
+                this->addDatatype(childData);
+                childData->setName(correctValue(jt.key()));
+                childData->jsonToData(input["sdfData"][jt.key()]);
+            }
+        }
+    }
+    // assign sdfRef and sdfRequired references
+    unassignedRefs = assignRefs(unassignedRefs, REF);
+    unassignedReqs = assignRefs(unassignedReqs, REQ);
+
+    if (!unassignedRefs.empty() || !unassignedReqs.empty())
+        cerr << "There is/are "
+        + to_string(unassignedRefs.size()+unassignedReqs.size())
+        + " reference(s) left unassigned" << endl;
+
+    if (isContext)
+    {
+        unassignedRefs = {};
+        unassignedReqs = {};
+
+        if (this->getNamespace())
+            this->getNamespace()->makeDefinitionsGlobal();
+    }
+
+    return this;
+}
+
+sdfFile* sdfFile::fromFile(std::string path)
+{
+    if (!contextLoaded)
+        loadContext();
+
+    json json_input;
+    ifstream input(path);
+    if (input)
+    {
+        input >>  json_input;
+        input.close();
+    }
+    else
+        cerr << "Error opening file" << endl;
+    return this->fromJson(json_input);
 }

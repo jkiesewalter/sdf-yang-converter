@@ -1752,9 +1752,43 @@ sdfThing* submoduleToSdfThing(struct lys_submodule *submodule)
 // XPath expressions?
 // TODO: YANG union to sdfChoice over type! What about bits, binary?
 
-void setSdfSpecExtension(lys_node *node, string arg)
+lys_ext_instance** argToSdfSpecExtension(string arg)
 {
     shared_ptr<lys_ext_instance*[]> exts(new lys_ext_instance*[1]());
+    shared_ptr<lys_ext_instance> ext(new lys_ext_instance());
+
+    exts[0] = (lys_ext_instance*)storeVoidPointer((shared_ptr<void>)ext);
+
+    //exts[0] = helper->data->ext[0];
+    exts[0]->def = &helper->extensions[0];
+    exts[0]->arg_value = storeString(arg);
+    exts[0]->flags = 0;
+    exts[0]->ext_size = 0;
+    exts[0]->insubstmt_index = 0;
+    exts[0]->insubstmt = 0;
+    exts[0]->parent_type = 1;
+    exts[0]->ext_type = LYEXT_FLAG;
+    exts[0]->ext = NULL;
+    exts[0]->nodetype = LYS_EXT;
+
+    return (lys_ext_instance**)storeVoidPointer((shared_ptr<void>)exts);
+}
+
+void setSdfSpecExtension(lys_tpdf *tpdf, string arg)
+{
+    tpdf->ext = argToSdfSpecExtension(arg);
+    tpdf->ext[0]->parent = (void*)tpdf;
+    tpdf->ext[0]->module = tpdf->module;
+    tpdf->ext_size = 1;
+}
+void setSdfSpecExtension(lys_node *node, string arg)
+{
+    node->ext = argToSdfSpecExtension(arg);
+    node->ext[0]->parent = (void*)node;
+    node->ext[0]->module = node->module;
+    node->ext_size = 1;
+
+    /*shared_ptr<lys_ext_instance*[]> exts(new lys_ext_instance*[1]());
     shared_ptr<lys_ext_instance> ext(new lys_ext_instance());
 
     exts[0] = (lys_ext_instance*)storeVoidPointer((shared_ptr<void>)ext);
@@ -1773,7 +1807,7 @@ void setSdfSpecExtension(lys_node *node, string arg)
     exts[0]->ext_type = LYEXT_FLAG;
     exts[0]->ext = NULL;
     exts[0]->module = node->module;
-    exts[0]->nodetype = LYS_EXT;
+    exts[0]->nodetype = LYS_EXT;*/
 }
 
 /*
@@ -2492,6 +2526,7 @@ struct lys_tpdf* sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf)
     }
 
     pathsToNodes[data->generateReferenceString()] = (lys_node*)tpdf;
+    setSdfSpecExtension(tpdf, "sdfData");
 
     return tpdf;
 }
@@ -2741,6 +2776,7 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module)
             pathsToNodes[data->generateReferenceString()] =
                     (lys_node*)grp.get();
 
+            setSdfSpecExtension((lys_node*)grp.get(), "sdfData");
             sdfRequiredToNode(data->getRequired(), module);
 
             //cout << grp.get()<< " new grouping "
@@ -2792,10 +2828,23 @@ void convertInfoBlock(sdfInfoBlock *info, lys_module &module)
 
 void convertNamespaceSection(sdfNamespaceSection *ns, lys_module &module)
 {
-    if (!ns)
-        return;
-    module.prefix = ns->getNamespacesAsArrays().begin()->first;
-    module.ns = ns->getNamespacesAsArrays().begin()->second;
+    string prefixString = "", nsString = "";
+    if (ns)
+    {
+        prefixString = ns->getNamespaceString();
+        nsString = ns->getNamespaces().begin()->second;
+    }
+
+    if (prefixString == "")
+        prefixString = module.name;
+
+    module.prefix = storeString(prefixString);
+
+    if (nsString == "")
+        module.ns = storeString("urn:ietf:params:xml:ns:yang:"
+            + prefixString);
+    else
+        module.ns = storeString(nsString);
 }
 
 void assignOpenRefs(lys_module &module)
@@ -2862,8 +2911,6 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 
     module.name = storeString(object.getName());
     module.dsc = storeString(object.getDescription());
-    convertInfoBlock(object.getInfo(), module);
-    convertNamespaceSection(object.getNamespace(), module);
 
     // convert datatypes to typedefs or groupings
     convertDatatypes(object.getDatatypes(), module);
@@ -2875,6 +2922,7 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
     {
         currentNode = NULL;
         currentNode = sdfDataToNode(props[i], currentNode, module);
+        setSdfSpecExtension((lys_node*)currentNode, "sdfProperty");
         // add the current node into the tree
         addNode(*currentNode, module);
         sdfRequiredToNode(props[i]->getRequired(), module);
@@ -2920,6 +2968,7 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 
         shared_ptr<lys_node_inout> output(new lys_node_inout());
         output->nodetype = LYS_OUTPUT;
+
         storeNode((shared_ptr<lys_node>&)output);
         addNode((lys_node&)*output, (lys_node&)*action, module);
 
@@ -2942,6 +2991,7 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
         else
             output->flags |= LYS_IMPLICIT;
 
+        setSdfSpecExtension((lys_node*)action.get(), "sdfAction");
         storeNode((shared_ptr<lys_node>&)action);
         addNode((lys_node&)*action, module);
 
@@ -2975,6 +3025,7 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
             }
         }
 
+        setSdfSpecExtension((lys_node*)notif.get(), "sdfEvent");
         storeNode((shared_ptr<lys_node>&)notif);
         addNode((lys_node&)*notif, module);
 
@@ -2985,7 +3036,11 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 
     // assign open references in nodes and typedefs
     if (!object.getParentThing())
+    {
         assignOpenRefs(module);
+        convertInfoBlock(object.getInfo(), module);
+        convertNamespaceSection(object.getNamespace(), module);
+    }
 
     module.tpdf = tpdfStore.data();
     module.tpdf_size = tpdfStore.size();
@@ -3090,13 +3145,15 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
 
     module.name = storeString(thing.getName());
     module.dsc = storeString(thing.getDescription());
-    convertInfoBlock(thing.getInfo(), module);
-    convertNamespaceSection(thing.getNamespace(), module);
     sdfRequiredToNode(thing.getRequired(), module);
 
     // assign open references in nodes and typedefs
     if (!thing.getParentThing())
+    {
         assignOpenRefs(module);
+        convertInfoBlock(thing.getInfo(), module);
+        convertNamespaceSection(thing.getNamespace(), module);
+    }
 
     return &module;
 }
@@ -3233,6 +3290,7 @@ int main(int argc, const char** argv)
 
         sdfObject moduleObject;
         sdfThing moduleThing;
+        sdfFile moduleSdf;
         lys_module module = {};
         module.ctx = ctx;
 
@@ -3261,7 +3319,14 @@ int main(int argc, const char** argv)
         cout << "Loading SDF JSON file" << endl;
         validateFile(inputFileName);
 
-        if (moduleObject.fileToObject(inputFileName, true) != NULL)
+        if (moduleSdf.fromFile(inputFileName))
+        {
+            cout << "!!!!!!!!Loading SDF JSON file -> finished" << endl;
+            if (moduleSdf.getThings().size() > 0)
+                sdfThingToModule(*moduleSdf.getThings()[0], module);
+            // TODO sdfFileToModule(moduleSdf, module);
+        }
+        else if (moduleObject.fileToObject(inputFileName, true) != NULL)
         {
             cout << "Loading SDF JSON file -> finished" << endl;
             //cout

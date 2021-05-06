@@ -14,6 +14,8 @@
 #include <nlohmann/json-schema.hpp>
 #include <libyang/libyang.h>
 
+#include <dirent.h>
+
 enum jsonDataType
 {
     json_number,
@@ -47,6 +49,7 @@ class sdfThing;
 class sdfObject;
 class sdfProperty;
 class sdfData;
+class sdfFile;
 
 std::string jsonDTypeToString(jsonDataType type);
 jsonDataType stringToJsonDType(std::string str);
@@ -66,7 +69,8 @@ class sdfCommon
 {
 public:
     sdfCommon(std::string _name = "", std::string _description = "",
-            sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {});
+            sdfCommon *_reference = NULL,
+            std::vector<sdfCommon*> _required = {}, sdfFile *_file = NULL);
     virtual ~sdfCommon();
     // getters
     std::string getName() const;
@@ -81,12 +85,14 @@ public:
     sdfData* getSdfDataReference() const;
     sdfData* getSdfPropertyReference() const;
     sdfData* getThisAsSdfData();
+    sdfFile* getParentFile() const;
     // setters
     void setName(std::string _name);
     void setLabel(std::string _label);
     void setDescription(std::string dsc);
     void addRequired(sdfCommon *common);
     void setReference(sdfCommon *common);
+    void setParentFile(sdfFile *file);
     //void setParentCommon(sdfCommon *parentCommon);
     // printing
     virtual std::string generateReferenceString() = 0;
@@ -99,6 +105,7 @@ private:
     sdfCommon *reference;
     std::vector<sdfCommon*> required;
     //sdfCommon *parent;
+    sdfFile *parentFile;
 };
 
 class sdfObjectElement : virtual public sdfCommon
@@ -151,12 +158,16 @@ public:
     std::map<const char*, const char*> getNamespacesAsArrays();
     std::string getDefaultNamespace();
     const char* getDefaultNamespaceAsArray();
+    std::string getNamespaceString() const;
     // parsing
     nlohmann::json namespaceToJson(nlohmann::json prefix);
     sdfNamespaceSection* jsonToNamespace(nlohmann::json input);
+    void makeDefinitionsGlobal();
 private:
+    // map of namespace prefixes/short names to namespace URIs
     std::map<std::string, std::string> namespaces;
     std::string default_ns;
+    //std::string ctxPath; TODO: define a context like in YANG?
 };
 
 class sdfData : virtual public sdfCommon
@@ -611,6 +622,7 @@ private:
     std::vector<sdfThing*> childThings;
     std::vector<sdfObject*> childObjects;
     sdfThing *parent;
+
 };
 
 /*
@@ -624,6 +636,47 @@ private:
 class sdfProduct : sdfThing
 {
     // ???
+};
+
+class sdfFile
+{
+public:
+    sdfFile();
+    ~sdfFile();
+    // setters
+    void setInfo(sdfInfoBlock *_info);
+    void setNamespace(sdfNamespaceSection *_ns);
+    void addThing(sdfThing *thing);
+    void addObject(sdfObject *object);;
+    void addProperty(sdfProperty *property);
+    void addAction(sdfAction *action);
+    void addEvent(sdfEvent *event);
+    void addDatatype(sdfData *datatype);
+    // getters
+    sdfInfoBlock* getInfo() const;
+    sdfNamespaceSection* getNamespace() const;
+    std::vector<sdfThing*> getThings() const;
+    std::vector<sdfObject*> getObjects() const;
+    std::vector<sdfProperty*> getProperties();
+    std::vector<sdfAction*> getActions();
+    std::vector<sdfEvent*> getEvents();
+    std::vector<sdfData*> getDatatypes();
+    // parsing
+    std::string generateReferenceString();
+    nlohmann::json toJson(nlohmann::json prefix);
+    std::string toString();
+    void toFile(std::string path);
+    sdfFile* fromJson(nlohmann::json input);
+    sdfFile* fromFile(std::string path);
+private:
+    sdfInfoBlock *info;
+    sdfNamespaceSection *ns;
+    std::vector<sdfThing*> things;
+    std::vector<sdfObject*> objects;
+    std::vector<sdfProperty*> properties;
+    std::vector<sdfAction*> actions;
+    std::vector<sdfEvent*> events;
+    std::vector<sdfData*> datatypes;
 };
 
 #endif
