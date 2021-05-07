@@ -151,7 +151,7 @@ class sdfNamespaceSection
 public:
     sdfNamespaceSection();
     sdfNamespaceSection(std::map<std::string, std::string> _namespaces,
-                        std::string _default_ns = "");
+                        std::string _default_ns);
     //~sdfNamespaceSection();
     // getters
     std::map<std::string, std::string> getNamespaces();
@@ -662,7 +662,7 @@ public:
     std::vector<sdfEvent*> getEvents();
     std::vector<sdfData*> getDatatypes();
     // parsing
-    std::string generateReferenceString();
+    //std::string generateReferenceString();
     nlohmann::json toJson(nlohmann::json prefix);
     std::string toString();
     void toFile(std::string path);

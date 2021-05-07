@@ -87,12 +87,14 @@ void loadContext(const char *path = ".")
         }
         closedir (dir);
 
-        sdfObject o;
-        sdfThing t;
+        //sdfObject o;
+        //sdfThing t;
+        shared_ptr<sdfFile> f(new sdfFile());
         for (int i = 0; i < names.size(); i++)
         {
-            o.fileToObject(names[i], true);
-            t.fileToThing(names[i]);
+            //o.fileToObject(names[i], true);
+            //t.fileToThing(names[i]);
+            f->fromFile(names[i]);
         }
     }
     else
@@ -329,16 +331,18 @@ void sdfObjectElement::setParentObject(sdfObject *_parentObject)
 
 string sdfObjectElement::generateReferenceString()
 {
-    if (this->getParentObject() == NULL)
+    if (this->getParentObject())
+        return this->parentObject->generateReferenceString() + "/";
+
+    else if (this->getParentFile())
+        return "#/";
+    else
     {
         cerr << "sdfObjectElement::generateReferenceString(): "
                 << this->getName() + " has no assigned parent object."
                 << endl;
         return "";
     }
-    else
-        return this->parentObject->generateReferenceString() + "/";
-            //+ this->getLabel();
 }
 
 sdfInfoBlock::sdfInfoBlock(string _title, string _version, string _copyright,
@@ -1017,7 +1021,10 @@ jsonDataType sdfData::getSimpType()
         if (ref)
             return ref->getSimpType();
         else
+        {
             cerr << "sdfData::getSimpType: reference is of wrong type" << endl;
+            cout << this->getReference()->getName();
+        }
     }
 
     return simpleType;
@@ -1036,8 +1043,9 @@ string sdfData::getUnits()
 string sdfData::generateReferenceString()
 {
     sdfCommon *parent = this->getParentCommon();
+    sdfFile *parentFile = this->getParentFile();
 
-    if (!parent)
+    if (!parent && !parentFile)
     {
         cerr << "sdfData::generateReferenceString(): sdfData object "
                 + this->getName() + " has no assigned parent" << endl;
@@ -1070,10 +1078,15 @@ string sdfData::generateReferenceString()
             return parent->generateReferenceString()
                     + "/sdfOutputData";
 
-        else
+        else if (parentFile)
+            return "#/sdfData/" + this->getName();
+
+        else if (parent)
             return parent->generateReferenceString()
                     + "/sdfData/" + this->getName();
     }
+    // this should never be reached
+    return "";
 }
 
 json sdfData::dataToJson(json prefix)
@@ -2315,23 +2328,19 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
         //cout << "jsonToObject: " << it.key() << endl;
         if (it.key() == "info" && !it.value().empty())
         {
-            this->setInfo(new sdfInfoBlock());
+            sdfInfoBlock *info = new sdfInfoBlock();
+            this->setInfo(info);
             this->info->jsonToInfo(input["info"]);
         }
         else if (it.key() == "namespace" && !it.value().empty())
         {
-            this->setNamespace(new sdfNamespaceSection());
+            sdfNamespaceSection *ns = new sdfNamespaceSection();
+            this->setNamespace(ns);
             this->ns->jsonToNamespace(input);
         }
         // for first level
         else if (it.key() == "sdfObject" && !it.value().empty())
         {
-            // if we are just loading the context, ignore objects that do not
-            // have a default namespace and hence do not contribute to the
-            // global namespace
-            if (isContext && !this->getParentThing() && (!this->getNamespace()
-                        || this->getNamespace()->getDefaultNamespace() == ""))
-                return NULL;
             for (json::iterator jt = it.value().begin();
                     jt != it.value().end(); ++jt)
             {
@@ -2451,6 +2460,13 @@ sdfObject* sdfObject::fileToObject(string path, bool testForThing)
 
 sdfThing* sdfThing::jsonToThing(json input, bool nested)
 {
+    // if we are just loading the context, ignore things that do not
+    // have a default namespace and hence do not contribute to the
+    // global namespace
+    if (false&&isContext && (!this->getParentFile()->getNamespace()
+            || this->getParentFile()->getNamespace()->getDefaultNamespace() == ""))
+        return NULL;
+
     this->jsonToCommon(input);
 
     for (json::iterator it = input.begin(); it != input.end(); ++it)
@@ -2458,12 +2474,15 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
         //cout << "jsonToThing: " << it.key() << endl;
         if (it.key() == "info" && !it.value().empty())
         {
-            this->setInfo(new sdfInfoBlock());
+            sdfInfoBlock *info = new sdfInfoBlock();
+            this->setInfo(info);
             this->info->jsonToInfo(input["info"]);
         }
         else if (it.key() == "namespace" && !it.value().empty())
         {
-            this->setNamespace(new sdfNamespaceSection());
+            cout << "OOOOOOOOOOOOOOOOOOOOOOOOOOO"<<endl;
+            sdfNamespaceSection *ns = new sdfNamespaceSection();
+            this->setNamespace(ns);
             this->ns->jsonToNamespace(input);
         }
         else if (it.key() == "defaultNamespace" && !it.value().empty())
@@ -2472,12 +2491,6 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
         }
         else if (it.key() == "sdfThing" && !it.value().empty())
         {
-            // if we are just loading the context, ignore things that do not
-            // have a default namespace and hence do not contribute to the
-            // global namespace
-            if (isContext && !nested && (!this->getNamespace()
-                    || this->getNamespace()->getDefaultNamespace() == ""))
-                return NULL;
             for (json::iterator jt = it.value().begin();
                     jt != it.value().end(); ++jt)
             {
@@ -2764,12 +2777,17 @@ std::map<const char*, const char*> sdfNamespaceSection::getNamespacesAsArrays()
     }
     return output;
 }
-/*
-sdfNamespaceSection::~sdfNamespaceSection()
+
+/*sdfNamespaceSection::~sdfNamespaceSection()
 {
     //namespaces.clear();
-}
-*/
+    map<string, string>::iterator it;
+    for (it = namespaces.begin(); it != namespaces.end(); it++)
+    {
+    }
+    namespaces.clear();
+}*/
+
 const char* sdfNamespaceSection::getDefaultNamespaceAsArray()
 {
     return this->default_ns.c_str();
@@ -3457,8 +3475,8 @@ void sdfCommon::setParentFile(sdfFile *file)
 
 sdfFile::sdfFile()
 {
-    info = new sdfInfoBlock();
-    ns = new sdfNamespaceSection();
+    info = NULL;
+    ns = NULL;
     things = {};
     objects = {};
     properties = {};
@@ -3611,36 +3629,37 @@ std::vector<sdfData*> sdfFile::getDatatypes()
     return datatypes;
 }
 
-std::string sdfFile::generateReferenceString()
+/*std::string sdfFile::generateReferenceString()
 {
     return "#/";
-}
+}*/
 
 nlohmann::json sdfFile::toJson(nlohmann::json prefix)
 {
+    // TODO
     // print info if specified by print_info
     if (this->info != NULL)
-        prefix = this->info->infoToJson(prefix);
+        prefix.push_back(this->info->infoToJson(prefix));
     if (this->ns != NULL)
-        prefix = this->ns->namespaceToJson(prefix);
+        prefix.push_back(this->ns->namespaceToJson(prefix));
 
     for (sdfThing *i : things)
-        prefix += i->thingToJson(prefix, false);
+        prefix.push_back(i->thingToJson(prefix, false));
 
     for (sdfObject *i : objects)
-        prefix += i->objectToJson(prefix, false);
+        prefix.push_back(i->objectToJson(prefix, false));
 
     for (sdfData *i : datatypes)
-        prefix += i->dataToJson(prefix);
+        prefix.push_back(i->dataToJson(prefix));
 
     for (sdfProperty *i : properties)
-        prefix += i->propertyToJson(prefix);
+        prefix.push_back(i->propertyToJson(prefix));
 
     for (sdfAction *i : actions)
-        prefix += i->actionToJson(prefix);
+        prefix.push_back(i->actionToJson(prefix));
 
     for (sdfEvent *i : events)
-        prefix += i->eventToJson(prefix);
+        prefix.push_back(i->eventToJson(prefix));
 
     return prefix;
 }
@@ -3650,6 +3669,7 @@ std::string sdfFile::toString()
     json json_output;
     return this->toJson(json_output).dump(INDENT_WIDTH);
 }
+
 void sdfFile::toFile(std::string path)
 {
     ofstream output(path);
@@ -3670,12 +3690,14 @@ sdfFile* sdfFile::fromJson(nlohmann::json input)
     {
         if (it.key() == "info" && !it.value().empty())
         {
-            this->setInfo(new sdfInfoBlock());
+            sdfInfoBlock *info = new sdfInfoBlock();
+            this->setInfo(info);
             info->jsonToInfo(input["info"]);
         }
         else if (it.key() == "namespace" && !it.value().empty())
         {
-            this->setNamespace(new sdfNamespaceSection());
+            sdfNamespaceSection *ns = new sdfNamespaceSection();
+            this->setNamespace(ns);
             ns->jsonToNamespace(input);
         }
         else if (it.key() == "defaultNamespace" && !it.value().empty())
@@ -3684,12 +3706,6 @@ sdfFile* sdfFile::fromJson(nlohmann::json input)
         }
         else if (it.key() == "sdfThing" && !it.value().empty())
         {
-            // if we are just loading the context, ignore things that do not
-            // have a default namespace and hence do not contribute to the
-            // global namespace
-            if (isContext && (!this->getNamespace()
-                    || this->getNamespace()->getDefaultNamespace() == ""))
-                return NULL;
             for (json::iterator jt = it.value().begin();
                     jt != it.value().end(); ++jt)
             {
@@ -3780,7 +3796,7 @@ sdfFile* sdfFile::fromJson(nlohmann::json input)
 
 sdfFile* sdfFile::fromFile(std::string path)
 {
-    if (!contextLoaded)
+    if (false&&!contextLoaded)
         loadContext();
 
     json json_input;

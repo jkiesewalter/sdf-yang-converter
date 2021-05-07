@@ -1443,7 +1443,7 @@ sdfObject* moduleToSdfObject(const struct lys_module *module)
     // Convert the namespace information
     map<string, string> nsMap;
     nsMap[avoidNull(module->prefix)] = avoidNull(module->ns);
-    object->setNamespace(new sdfNamespaceSection(nsMap));
+    object->setNamespace(new sdfNamespaceSection(nsMap, ""));
 
     // TODO: feature, deviation, extension, import, anydata?, anyxml?
 
@@ -1926,57 +1926,24 @@ void fillLysType(sdfData *data, struct lys_type &type)
     {
         type.base = LY_TYPE_ENUM;
         type.der = &enumTpdf;
-        //int enmSize = 0; // TODO: clean this up
-        //static std::vector<std::string> enmNames;
-        /*
-        if (!data->getEnumString().empty())
-        {
-            std::vector<std::string> strings = data->getEnumString();
-            enmSize = strings.size();
-            enmNames.resize(enmSize);
-            for (int i = 0; i < enmSize; i++)
-            {
-                enmNames[i] = strings[i];
-            }
-        }*/
         int enmSize = data->getEnumString().size();
         vector<string> enm = data->getEnumString();
         type.info.enums.count = enmSize;
-        //static std::vector<lys_type_enum> enms(enmSize);
+        shared_ptr<lys_type_enum[]> e(new lys_type_enum[enmSize]());
+        storeVoidPointer((shared_ptr<void>)e);
+        type.info.enums.enm = e.get();
         for (int i = 0; i < enmSize; i++)
         {
-            //type.info.enums.enm[i] = new lys_type_enum();
-            type.info.enums.enm[i].name = enm[i].c_str();
+            type.info.enums.enm[i].name = storeString(enm[i]);
             type.info.enums.enm[i].value = i;
-            //enms[i].name = enm[i].c_str();
-            //enms[i].value = i;
         }
-        //type.info.enums.enm = enms.data();
     }
+
     else if (type.base == LY_TYPE_BOOL)
     {
         type.der = &booleanTpdf;
     }
-    /*else if (type.base == LY_TYPE_DEC64)
-    {
-        type.der = &dec64Tpdf;
-        type.info.dec64.dig = 6;
-        // TODO: decide number of fraction-digits
-        // (std::to_string is always 6)
-        type.info.dec64.div = (int)data->getMultipleOf();
-        // TODO: prioritise constant over range? -> ranges can or'ed
-        const char *range = data->getConstantAsCharArray();
-        if (!range)
-            range = floatToRange(data->getMinimum(),
-                    data->getMaximum());
-        if (range)
-        {
-            lys_restr rangeRestr = {};
-            rangeRestr.expr = range;
-            type.info.dec64.range = storeRestriction(rangeRestr);
-        }
 
-    }*/
     else if (type.base == LY_TYPE_STRING)
     {
         type.der = &stringTpdf;
@@ -2832,7 +2799,8 @@ void convertNamespaceSection(sdfNamespaceSection *ns, lys_module &module)
     if (ns)
     {
         prefixString = ns->getNamespaceString();
-        nsString = ns->getNamespaces().begin()->second;
+        if (!ns->getNamespaces().empty())
+            nsString = ns->getNamespaces().begin()->second;
     }
 
     if (prefixString == "")
@@ -2890,34 +2858,9 @@ void importHelper(lys_module &module)
     module.imp[0].prefix = helper->prefix;
 }
 
-struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
+void convertProperties(vector<sdfProperty*> props, lys_module &module)
 {
-    module.type = 0;
-    module.deviated = 0;
-    //module.imp_size = 0;
-    module.inc_size = 0;
-    module.ident_size = 0;
-    module.features_size = 0;
-    module.augment_size = 0;
-    module.deviation_size = 0;
-    module.extensions_size = 0;
-    //module.ext_size = 0;
-    module.ref = "";
-    module.contact = "";
-    module.version = YANG_VERSION;
-
-    if (!object.getParentThing())
-        importHelper(module);
-
-    module.name = storeString(object.getName());
-    module.dsc = storeString(object.getDescription());
-
-    // convert datatypes to typedefs or groupings
-    convertDatatypes(object.getDatatypes(), module);
-
-    vector<sdfProperty*> properties = object.getProperties();
     lys_node *currentNode;
-    vector<sdfProperty*> props = object.getProperties();
     for (int i = 0; i < props.size(); i++)
     {
         currentNode = NULL;
@@ -2927,16 +2870,21 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
         addNode(*currentNode, module);
         sdfRequiredToNode(props[i]->getRequired(), module);
     }
+}
 
-    vector<sdfAction*> actions = object.getActions();
+// TODO: now all actions are added to the module (which is changed later)
+void convertActions(vector<sdfAction*> actions, lys_module &module)
+{
     for (int i = 0; i < actions.size(); i++)
     {
         shared_ptr<lys_node_rpc_action> action(new lys_node_rpc_action());
         action->name = storeString(actions[i]->getName());
         action->dsc = storeString(actions[i]->getDescription());
 
-        if (object.getParentThing())
+        // if the action is not at top level translate to yang action
+        if (!actions[i]->getParentFile())
             action->nodetype = LYS_ACTION;
+        // else to rpc
         else
             action->nodetype = LYS_RPC;
 
@@ -2997,8 +2945,10 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 
         sdfRequiredToNode(actions[i]->getRequired(), module);
     }
+}
 
-    vector<sdfEvent*> events = object.getEvents();
+void convertEvents(vector<sdfEvent*> events, lys_module &module)
+{
     for (int i = 0; i < events.size(); i++)
     {
         shared_ptr<lys_node_notif> notif(new lys_node_notif());
@@ -3031,35 +2981,13 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
 
         sdfRequiredToNode(events[i]->getRequired(), module);
     }
-
-    sdfRequiredToNode(object.getRequired(), module);
-
-    // assign open references in nodes and typedefs
-    if (!object.getParentThing())
-    {
-        assignOpenRefs(module);
-        convertInfoBlock(object.getInfo(), module);
-        convertNamespaceSection(object.getNamespace(), module);
-    }
-
-    module.tpdf = tpdfStore.data();
-    module.tpdf_size = tpdfStore.size();
-
-    return &module;
 }
 
-/*
- * The information from a sdfThing is transferred into a YANG module
- */
-struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
-{
-    vector<sdfThing*> things = thing.getThings();
-    vector<sdfObject*> objects = thing.getObjects();
-    vector<lys_node*> conts;
-    conts.reserve(objects.size() + things.size());
+struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module);
 
-    if (!thing.getParentThing())
-        importHelper(module);
+vector<lys_node*> convertThings(vector<sdfThing*> things, lys_module &module)
+{
+    vector<lys_node*> conts;
 
     for (int i = 0; i < things.size(); i++)
     {
@@ -3101,6 +3029,68 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
         module.inc[i].submodule = submod.get();
         */
     }
+    return conts;
+}
+
+struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module)
+{
+    module.type = 0;
+    module.deviated = 0;
+    //module.imp_size = 0;
+    module.inc_size = 0;
+    module.ident_size = 0;
+    module.features_size = 0;
+    module.augment_size = 0;
+    module.deviation_size = 0;
+    module.extensions_size = 0;
+    //module.ext_size = 0;
+    module.ref = "";
+    module.contact = "";
+    module.version = YANG_VERSION;
+
+    if (!object.getParentThing() && !object.getParentFile())
+        importHelper(module);
+
+    module.name = storeString(object.getName());
+    module.dsc = storeString(object.getDescription());
+
+    convertDatatypes(object.getDatatypes(), module);
+    convertProperties(object.getProperties(), module);
+
+    /*lys_node *currentNode;
+    vector<sdfProperty*> props = object.getProperties();
+    for (int i = 0; i < props.size(); i++)
+    {
+        currentNode = NULL;
+        currentNode = sdfDataToNode(props[i], currentNode, module);
+        setSdfSpecExtension((lys_node*)currentNode, "sdfProperty");
+        // add the current node into the tree
+        addNode(*currentNode, module);
+        sdfRequiredToNode(props[i]->getRequired(), module);
+    }*/
+
+    convertActions(object.getActions(), module);
+    convertEvents(object.getEvents(), module);
+
+    sdfRequiredToNode(object.getRequired(), module);
+
+    // assign open references in nodes and typedefs
+    if (!object.getParentThing() && !object.getParentFile())
+    {
+        assignOpenRefs(module);
+        convertInfoBlock(object.getInfo(), module);
+        convertNamespaceSection(object.getNamespace(), module);
+    }
+
+    module.tpdf = tpdfStore.data();
+    module.tpdf_size = tpdfStore.size();
+
+    return &module;
+}
+
+vector<lys_node*> convertObjects(vector<sdfObject*> objects, lys_module &module)
+{
+    vector<lys_node*> conts;
 
     for (int i = 0; i < objects.size(); i++)
     {
@@ -3126,6 +3116,23 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
                 (lys_node*)cont.get();
     }
 
+    return conts;
+}
+
+/*
+ * The information from a sdfThing is transferred into a YANG module
+ */
+struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
+{
+    vector<lys_node*> conts;
+
+    if (!thing.getParentThing() && !thing.getParentFile())
+        importHelper(module);
+
+    conts = convertThings(thing.getThings(), module);
+    vector<lys_node*> contsTmp = convertObjects(thing.getObjects(), module);
+    conts.insert(conts.end(), contsTmp.begin(), contsTmp.end());
+
     for (int i = 0; i < conts.size(); i++)
         addNode(*conts[i], module);
 
@@ -3148,7 +3155,7 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
     sdfRequiredToNode(thing.getRequired(), module);
 
     // assign open references in nodes and typedefs
-    if (!thing.getParentThing())
+    if (!thing.getParentThing() && !thing.getParentFile())
     {
         assignOpenRefs(module);
         convertInfoBlock(thing.getInfo(), module);
@@ -3157,6 +3164,49 @@ struct lys_module* sdfThingToModule(sdfThing &thing, lys_module &module)
 
     return &module;
 }
+
+struct lys_module* sdfFileToModule(sdfFile &file, lys_module &module)
+{
+    vector<lys_node*> conts;
+
+    importHelper(module);
+
+    conts = convertThings(file.getThings(), module);
+    vector<lys_node*> contsTmp = convertObjects(file.getObjects(), module);
+    conts.insert(conts.end(), contsTmp.begin(), contsTmp.end());
+
+    for (int i = 0; i < conts.size(); i++)
+        addNode(*conts[i], module);
+
+    convertProperties(file.getProperties(), module);
+    convertActions(file.getActions(), module);
+    convertEvents(file.getEvents(), module);
+    convertDatatypes(file.getDatatypes(), module);
+
+    module.type = 0;
+    module.deviated = 0;
+    //.imp_size = 0;
+    module.inc_size = 0;
+    module.ident_size = 0;
+    module.features_size = 0;
+    module.augment_size = 0;
+    module.deviation_size = 0;
+    module.extensions_size = 0;
+    //module.ext_size = 0;
+    module.ref = "";
+    module.contact = "";
+    module.version = YANG_VERSION;
+
+    module.name = storeString(file.getInfo()->getTitle());
+    module.dsc = storeString(" ");
+
+    assignOpenRefs(module);
+    convertInfoBlock(file.getInfo(), module);
+    convertNamespaceSection(file.getNamespace(), module);
+
+    return &module;
+}
+
 
 int main(int argc, const char** argv)
 {
@@ -3321,9 +3371,9 @@ int main(int argc, const char** argv)
 
         if (moduleSdf.fromFile(inputFileName))
         {
-            cout << "!!!!!!!!Loading SDF JSON file -> finished" << endl;
-            if (moduleSdf.getThings().size() > 0)
-                sdfThingToModule(*moduleSdf.getThings()[0], module);
+            //cout << moduleSdf.fromFile(inputFileName)->toString() << endl;
+            cout << "Loading SDF JSON file -> finished" << endl;
+            sdfFileToModule(moduleSdf, module);
             // TODO sdfFileToModule(moduleSdf, module);
         }
         else if (moduleObject.fileToObject(inputFileName, true) != NULL)
