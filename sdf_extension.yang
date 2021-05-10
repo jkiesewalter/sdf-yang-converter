@@ -21,14 +21,4 @@ module sdf_extension {
       Is needed for conversion back to SDF.";
     argument "sdf-spec-name";
   }
-  
-  container test {
-    helper:sdf-spec "sdfThing";
-    leaf a {
-      type string;
-    }
-    leaf b {
-      type boolean;
-    }
-  }
 }

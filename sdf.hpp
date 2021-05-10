@@ -53,7 +53,7 @@ class sdfFile;
 
 std::string jsonDTypeToString(jsonDataType type);
 jsonDataType stringToJsonDType(std::string str);
-sdfCommon* refToCommon(std::string ref);
+sdfCommon* refToCommon(std::string ref, std::string nsPrefix = "");
 std::vector<std::tuple<std::string, sdfCommon*>> assignRefs(
         std::vector<std::tuple<std::string, sdfCommon*>> unassignedRefs);
 std::string  correctValue(std::string val);
@@ -86,6 +86,7 @@ public:
     sdfData* getSdfPropertyReference() const;
     sdfData* getThisAsSdfData();
     sdfFile* getParentFile() const;
+    sdfFile* getTopLevelFile();
     // setters
     void setName(std::string _name);
     void setLabel(std::string _label);
@@ -115,7 +116,7 @@ public:
             sdfCommon *_reference = NULL, std::vector<sdfCommon*> _required = {},
             sdfObject *_parentObject = NULL);
     ~sdfObjectElement();
-    sdfObject* getParentObject();
+    sdfObject* getParentObject() const;
     void setParentObject(sdfObject *parentObject);
     std::string generateReferenceString();
 private:
@@ -561,7 +562,7 @@ public:
     std::vector<sdfAction*> getActions();
     std::vector<sdfEvent*> getEvents();
     std::vector<sdfData*> getDatatypes();
-    sdfThing* getParentThing();
+    sdfThing* getParentThing() const;
     // parsing
     std::string generateReferenceString();
     nlohmann::json objectToJson(nlohmann::json prefix,
@@ -662,7 +663,7 @@ public:
     std::vector<sdfEvent*> getEvents();
     std::vector<sdfData*> getDatatypes();
     // parsing
-    //std::string generateReferenceString();
+    std::string generateReferenceString();
     nlohmann::json toJson(nlohmann::json prefix);
     std::string toString();
     void toFile(std::string path);

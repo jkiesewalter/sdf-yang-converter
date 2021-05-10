@@ -1,6 +1,6 @@
 # SDF-YANG-Converter
 
-This converter is work in progress. Currently, the direction YANG->SDF is (roughly) finished, SDF->YANG is implemented in part. Only `.sdf.json` is supported as file format for SDF models. For details concerning the conversion please refer to the tables below.
+This converter is work in progress. Currently, both directions (YANG->SDF and SDF->YANG) are roughly finished. Only `.sdf.json` is supported as file format for SDF models. For details concerning the conversion please refer to the tables below.
 
 Prerequisites:
 * A copy of the [YANG GitHub repository](https://github.com/YangModels/yang) is needed to load the context of a YANG file
@@ -8,7 +8,7 @@ Prerequisites:
 * [nlohmann/json](https://github.com/nlohmann/json) needs to be installed to parse JSON files
 * [nlohmann/json-shema-validator](https://github.com/pboettch/json-schema-validator) needs to be installed to validate resulting SDF JSON files with a JSON schema (in this case the validation schema from the [SDF Internet Draft](https://www.ietf.org/archive/id/draft-ietf-asdf-sdf-05.html) is used)
 
-Compile the code with `make`. Run the converter with `./converter -f path/to/input/file [- o path/to/output/file] -c path/to/yang/repo`, e.g. `./converter -f ./yang/standard/ietf/RFC/ietf-l2vpn-svc.yang -c ./yang` for conversion from YANG to SDF. If no output file name is provided, the output file will be named after the input model.
+Compile the code with `make`. Run the converter with `./converter -f path/to/input/file [- o path/to/output/file] [-c path/to/yang/repo]`, e.g. `./converter -f ./yang/standard/ietf/RFC/ietf-l2vpn-svc.yang -c ./yang` for conversion from YANG to SDF. If no output file name is provided, the output file will be named after the input model.
 
 ## Conversion table YANG->SDF
 
@@ -54,7 +54,7 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |SDF statement|translated to YANG|done?|problems/remarks|
 |-|-|-|-|
 |sdfProduct|module on highest level, container otherwise||Will sdfProduct even exist in future SDF versions?|
-|sdfThing|module on highest level, container otherwise|||Round trips?|
+|sdfThing|module on highest level, container otherwise|done||
 |sdfObject|module on highest level, container otherwise|done||
 |sdfProperty (type integer/number/boolean/string)|leaf|done|
 |sdfProperty (type array with items of type integer/number/boolean/string)|leaf-list|done|When the resulting leaf-list has one or more default values the libyang parser complains although I think that should be valid.|
@@ -76,8 +76,9 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |sdfRef (to sdfData of type array with items of type object (compound-type))|uses (and refine if necessary) that replaces the node corresponding to the element the sdfRef belongs to|done|Refines relate to the node type of the refined node. If sdfRef references an sdfData element that also contains an sdfRef the translation will be a uses of a grouping with a uses. If an sdfRef to an sdfData element with another sdfRef is refined with a minItems statement for example that cannot be tranlated directly since uses nodes do not have the min-elements statement.|
 |sdfRef (to sdfProperty of type object)|Uses (and refine if necessary). Create a grouping that replaces the container the sdfProperty was translated to.|done||
 |sdfRef (to sdfProperty of type array with items of type object)|Uses (and refine if necessary) that replaces the node corresponding to the element the sdfRef belongs to. Create a grouping containing the list that the sdfProperty was translated to.|done|see above|
+|sdfRef (to property of sdfData/array item constraint of type object (compound-type))|depends on what the property was converted to|done|
 |sdfChoice|choice with one case for each element of the sdfChoice; each element is translated like a sdfProperty|done|If the sdfChoice only contains different types it could also be translated to YANG type union (of those different types). YANG choices can only have default cases, so how should default values of simple types be translated?|
-|sdfRequired|Set the mandatory statement of the corresponding leaf/choice (which are the only nodes that can be marked as mandatory). If the corresponding node is not a leaf/choice make all of the nodes decendant leafs/choices mandatory|||
+|sdfRequired|Set the mandatory statement of the corresponding leaf/choice (which are the only nodes that can explicitely be marked as mandatory). If the corresponding node is not a leaf/choice make the first descendant that is a leaf/choice mandatory|done||
 
 \* please note that an *(object) property* is not the same as sdfProperty and *type object* is not the same as sdfObject
 

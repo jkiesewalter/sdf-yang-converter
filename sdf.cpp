@@ -87,15 +87,15 @@ void loadContext(const char *path = ".")
         }
         closedir (dir);
 
-        //sdfObject o;
-        //sdfThing t;
-        shared_ptr<sdfFile> f(new sdfFile());
+        //shared_ptr<sdfFile> f(new sdfFile());
+        static sdfFile f;
+        static vector<sdfFile> files;
         for (int i = 0; i < names.size(); i++)
         {
-            //o.fileToObject(names[i], true);
-            //t.fileToThing(names[i]);
-            f->fromFile(names[i]);
+            //f.fromFile(names[i]);
+            //files.push_back(f);
         }
+        f.fromFile("alarm_types.sdf.json");
     }
     else
     {
@@ -104,47 +104,38 @@ void loadContext(const char *path = ".")
         perror ("");
     }
 
+
     isContext = false;
 }
 
-sdfCommon* refToCommon(string ref)
+sdfCommon* refToCommon(string ref, std::string nsPrefix)
 {
-    /*
+    // Also try alternative ref strings
+    regex sameNsRegex("#/(.*)");
+    regex diffNsRegex(".*:/(.*)");
+    //regex diffNsRegex("([\\w\\d]+):/.*");
     smatch sm;
-    regex split_regex("#(/(.*))+");
-    regex_match(ref, sm, split_regex);
-    cout << sm[2] << endl;
-    */
-    //regex sameNsRegex("#/.*");
-    //if (!regex_match(ref, sameNsRegex))
-    if (existingDefinitonsGlobal[ref] != NULL)
-    {
-        //cout << "refToCommon(): trying to load definition for reference "
-        //        << ref  << " from different namespace" << endl;
+    string refAlter = "";
+    if (regex_match(ref, sm, sameNsRegex) && nsPrefix != "")
+        refAlter = nsPrefix + ":/" + string(sm[1]);
 
+    else if (regex_match(ref, sm, diffNsRegex))
+        refAlter = "#/" + string(sm[1]);
+
+    // Look through definitions for ref / alternative ref
+    if (existingDefinitonsGlobal[ref])
         return existingDefinitonsGlobal[ref];
 
-        /*smatch sm;
-        //regex diffNsRegex("(.*):/.*");
-        regex diffNsRegex("([\\w\\d]+):/.*");
-        if (regex_match(ref, sm, diffNsRegex))
-        {
-            cout << "match found" << endl;
-            for (auto i : sm)
-                cout << i << endl;
-
-        }*/
-
-    }
-    else if (existingDefinitons[ref] != NULL)
-    {
+    else if (existingDefinitons[ref])
         return existingDefinitons[ref];
-    }
+
+    else if (existingDefinitons[refAlter])
+        return existingDefinitons[ref];
+
     else
-    {
         cerr << "refToCommon(): definition for reference "
-                << ref << " does not exist" << endl;
-    }
+                + ref + " does not exist" << endl;
+
     return NULL;
 }
 
@@ -161,6 +152,7 @@ vector<tuple<string, sdfCommon*>> assignRefs(
     {
         tie(name, com) = unRefs;
         sdfCommon *ref = refToCommon(name);
+
         if (com && ref)
         {
             if (r == REF)
@@ -319,7 +311,7 @@ sdfObjectElement::~sdfObjectElement()
     parentObject = NULL;
 }
 
-sdfObject* sdfObjectElement::getParentObject()
+sdfObject* sdfObjectElement::getParentObject() const
 {
     return parentObject;
 }
@@ -335,7 +327,8 @@ string sdfObjectElement::generateReferenceString()
         return this->parentObject->generateReferenceString() + "/";
 
     else if (this->getParentFile())
-        return "#/";
+        //return "#/";
+        return this->getParentFile()->generateReferenceString();
     else
     {
         cerr << "sdfObjectElement::generateReferenceString(): "
@@ -1079,7 +1072,8 @@ string sdfData::generateReferenceString()
                     + "/sdfOutputData";
 
         else if (parentFile)
-            return "#/sdfData/" + this->getName();
+            return parentFile->generateReferenceString() + "sdfData/"
+                    + this->getName();
 
         else if (parent)
             return parent->generateReferenceString()
@@ -1647,7 +1641,7 @@ vector<sdfData*> sdfObject::getDatatypes()
     return this->datatypes;
 }
 
-sdfThing* sdfObject::getParentThing()
+sdfThing* sdfObject::getParentThing() const
 {
     return parent;
 }
@@ -1724,6 +1718,11 @@ string sdfObject::generateReferenceString()
     if (this->parent != NULL)
         return this->parent->generateReferenceString() + "/sdfObject/"
                 + this->getName();
+
+    else if (this->getParentFile())
+        return this->getParentFile()->generateReferenceString()
+                + "sdfObject/" + this->getName();
+
     else
         return "#/sdfObject/" + this->getName();
 }
@@ -1873,6 +1872,11 @@ string sdfThing::generateReferenceString()
     if (this->parent != NULL)
         return this->parent->generateReferenceString() + "/sdfThing/"
                 + this->getName();
+
+    else if (this->getParentFile())
+        return this->getParentFile()->generateReferenceString() +
+                "sdfThing/" + this->getName();
+
     else
         return "#/sdfThing/" + this->getName();
 }
@@ -1888,16 +1892,12 @@ void sdfCommon::jsonToCommon(json input)
             this->setDescription(it.value());
         else if (it.key() == "sdfRef")
         {
-            //this->reference = refToCommon(correctValue(it.value()));
             unassignedRefs.push_back(tuple<string, sdfCommon*>{
                 correctValue(it.value()), this});
             //cout << correctValue(it.value())+" "+this->getName() << endl;
         }
         else if (it.key() == "sdfRequired")
             for (auto jt : it.value())
-                //if (refToCommon(jt) != NULL)
-                //    this->addRequired(refToCommon(jt));
-                //else
                 unassignedReqs.push_back(tuple<string, sdfCommon*>{
                     correctValue(jt), this});
     }
@@ -2307,13 +2307,13 @@ void sdfNamespaceSection::makeDefinitionsGlobal()
         newRef = it->first;
         regex hashSplit ("#(.*)");
         smatch sm;
-        if (regex_match(newRef, sm, hashSplit)
-                && this->getDefaultNamespace() != "")
+        if (this->getDefaultNamespace() != "")
         {
-            newRef = this->getDefaultNamespace() + ":" + string(sm[1]);
-
+            if (regex_match(newRef, sm, hashSplit))
+                newRef = this->getDefaultNamespace() + ":" + string(sm[1]);
+            //cout << newRef << endl;
+            //cout << it->second->getName() << endl;
             existingDefinitonsGlobal[newRef] = it->second;
-            cout << newRef << endl;
         }
     }
 
@@ -3629,10 +3629,14 @@ std::vector<sdfData*> sdfFile::getDatatypes()
     return datatypes;
 }
 
-/*std::string sdfFile::generateReferenceString()
+std::string sdfFile::generateReferenceString()
 {
+    if (this->getNamespace()
+            && this->getNamespace()->getDefaultNamespace() != "")
+        return this->getNamespace()->getDefaultNamespace() + ":/";
+
     return "#/";
-}*/
+}
 
 nlohmann::json sdfFile::toJson(nlohmann::json prefix)
 {
@@ -3690,12 +3694,14 @@ sdfFile* sdfFile::fromJson(nlohmann::json input)
     {
         if (it.key() == "info" && !it.value().empty())
         {
+            //shared_ptr<sdfInfoBlock> info(new sdfInfoBlock());
             sdfInfoBlock *info = new sdfInfoBlock();
             this->setInfo(info);
             info->jsonToInfo(input["info"]);
         }
         else if (it.key() == "namespace" && !it.value().empty())
         {
+            //shared_ptr<sdfNamespaceSection> ns(new sdfNamespaceSection());
             sdfNamespaceSection *ns = new sdfNamespaceSection();
             this->setNamespace(ns);
             ns->jsonToNamespace(input);
@@ -3796,7 +3802,7 @@ sdfFile* sdfFile::fromJson(nlohmann::json input)
 
 sdfFile* sdfFile::fromFile(std::string path)
 {
-    if (false&&!contextLoaded)
+    if (!contextLoaded)
         loadContext();
 
     json json_input;
@@ -3809,4 +3815,26 @@ sdfFile* sdfFile::fromFile(std::string path)
     else
         cerr << "Error opening file" << endl;
     return this->fromJson(json_input);
+}
+
+sdfFile* sdfCommon::getTopLevelFile()
+{
+    sdfCommon *parent = this;
+    while (parent && !parent->getParentFile())
+    {
+        sdfData *d = dynamic_cast<sdfData*>(parent);
+        sdfObject *o = dynamic_cast<sdfObject*>(parent);
+        sdfThing *t = dynamic_cast<sdfThing*>(parent);
+        sdfObjectElement *oe = dynamic_cast<sdfObjectElement*>(parent);
+
+        if (t)
+            parent = t->getParentThing();
+        else if (o)
+            parent = o->getParentThing();
+        else if (oe)
+            parent = oe->getParentObject();
+        else if (d)
+            parent = d->getParentCommon();
+    }
+    return parent->getParentFile();
 }
