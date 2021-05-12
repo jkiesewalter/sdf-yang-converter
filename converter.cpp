@@ -44,7 +44,7 @@ vector<shared_ptr<lys_node>> nodeStore;
 map<string, lys_node*> pathsToNodes; // sdfRef paths for nodes
 //vector<tuple<sdfData*, lys_node*>> openRefs; // sdfRefs still open for nodes
 //vector<tuple<sdfData*, lys_tpdf*>> openRefsTpdf; // sdfRefs still open for tpdfs
-vector<lys_tpdf> tpdfStore;
+vector<lys_tpdf*> tpdfStore;
 vector<lys_restr> restrStore;
 vector<shared_ptr<void>> voidPointerStore;
 lys_module *helper;
@@ -147,7 +147,7 @@ lys_restr* storeRestriction(lys_restr restr)
     return &restrStore.back();
 }
 
-lys_tpdf* storeTypedef(lys_tpdf &tpdf)
+lys_tpdf* storeTypedef(lys_tpdf *tpdf)
 {
     //cout << stringStore.size() << "/"<<stringStore.capacity();
     if (tpdfStore.size() == tpdfStore.max_size())
@@ -157,7 +157,7 @@ lys_tpdf* storeTypedef(lys_tpdf &tpdf)
         return NULL;
     }
     tpdfStore.push_back(tpdf);
-    return &tpdfStore.back();
+    return tpdfStore.back();
 }
 
 void* storeVoidPointer(shared_ptr<void> v)
@@ -204,10 +204,16 @@ string generatePath(lys_node *node, lys_module *module = NULL)
     else
         prefix = "/" + avoidNull(node->module->prefix) + ":";
 
-    if (node->parent == NULL)
-        return prefix + avoidNull(node->name);
+    string nodeName = avoidNull(node->name);
+    if (nodeName == "" && (node->nodetype & (LYS_INPUT | LYS_OUTPUT)))
+    {
+        return  generatePath(node->parent, module);
+    }
 
-    return  generatePath(node->parent, module) + prefix + avoidNull(node->name);
+    if (node->parent == NULL)
+        return prefix + nodeName;
+
+    return  generatePath(node->parent, module) + prefix + nodeName;
 }
 
 /*
@@ -2224,8 +2230,7 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
         //cout << i << "/" << size << endl;
         //cout << nodeStore[i]->name << " " << nodeStore[i]->nodetype << endl;
         if (ref && nodeStore[i]
-                && pathsToNodes[refString]
-                                == nodeStore[i].get())
+                && pathsToNodes[refString] == nodeStore[i].get())
         {
             // find out if the node is part of a grouping
             bool isInGrp = false;
@@ -2301,12 +2306,13 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                 storeNode(refNode);
             }
             else if (nodeStore[i]->nodetype == LYS_LIST
-                    || (isInGrp &&
-                       (nodeStore[i]->nodetype & (LYS_LEAF | LYS_LEAFLIST))))
+                    || (isInGrp))// &&
+                       //(nodeStore[i]->nodetype & (LYS_LEAF | LYS_LEAFLIST))))
             {
                 shared_ptr<lys_node_uses> uses =
                         shared_ptr<lys_node_uses>(new lys_node_uses());
                 uses->nodetype = LYS_USES;
+                uses->module = &module;
 
                 shared_ptr<lys_node_grp> grp(new lys_node_grp());
 
@@ -2319,8 +2325,8 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                     child->parent = (lys_node*)grp.get();
                 }
                 nodeStore[i]->child = NULL;*/
+
                 // node has to be added at top-level due to scoping
-                //addNode((lys_node&)*grp, *nodeStore[i]->parent, module);
                 addNode((lys_node&)*grp, *nodeStore[i]->module);
                 lys_node *origParent = nodeStore[i]->parent;
                 removeNode(*nodeStore[i]);
@@ -2356,6 +2362,7 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                 // by a uses to that grouping
                 shared_ptr<lys_node_uses> uses2(new lys_node_uses(
                         *uses.get()));
+                uses2->name = uses2->grp->name;
                 //addNode((lys_node&)*uses2, *grp->parent, module);
                 if (origParent)
                     addNode(*storeNode((shared_ptr<lys_node>&)uses2),
@@ -2378,8 +2385,19 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                 string dsc = avoidNull(node->name) + "\n"
                         + avoidNull(node->dsc);
                 uses->refine->dsc = storeString(dsc);
-                uses->refine->mod.list.min = ((lys_node_list*)node)->min;
-                uses->refine->mod.list.max = ((lys_node_list*)node)->max;
+                uint32_t min = 0, max = 0;
+                if (node->nodetype == LYS_LIST)
+                {
+                    min = ((lys_node_list*)node)->min;
+                    max = ((lys_node_list*)node)->max;
+                }
+                else if (node->nodetype == LYS_LEAFLIST)
+                {
+                    min = ((lys_node_leaflist*)node)->min;
+                    max = ((lys_node_leaflist*)node)->max;
+                }
+                uses->refine->mod.list.min = min;
+                uses->refine->mod.list.max = max;
                 if (uses->refine->mod.list.min != 0)
                     uses->refine->flags |= LYS_RFN_MINSET;
                 if (uses->refine->mod.list.max != 0)
@@ -2401,6 +2419,7 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                         shared_ptr<lys_node_uses>(new lys_node_uses());
                 uses->nodetype = LYS_USES;
                 uses->grp = (lys_node_grp*)nodeStore[i].get();
+                uses->module = &module;
                 string usesName;
                 if (uses->grp->module != &module)
                     usesName = avoidNull(uses->grp->module->prefix) + ":"
@@ -2416,25 +2435,27 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                 uses->refine->module = &module;
                 if (uses->grp->child)
                 {
-                uses->refine->target_name = uses->grp->child->name;
-                uses->refine->target_type = uses->grp->child->nodetype;
-                }string dsc = avoidNull(node->name) + "\n"
+                    uses->refine->target_name = uses->grp->child->name;
+                    uses->refine->target_type = uses->grp->child->nodetype;
+                }
+                string dsc = avoidNull(node->name) + "\n"
                         + avoidNull(node->dsc);
                 uses->refine->dsc = storeString(dsc);
+
                 bool isList = false;
                 lys_node *n = (lys_node*)uses->grp->child;
                 // if the grouping has only one uses node
                 while (n->nodetype == LYS_USES && !n->next)
                 {
-                    // if the uses has only one child of type list
-                    if (n->child && n->child->nodetype == LYS_LIST &&
+                    // if the uses has only one child of type list/leaflist/leaf
+                    if (n->child && (n->child->nodetype & (LYS_LIST | LYS_LEAF | LYS_LEAFLIST)) &&
                             !n->child->next)
                     {
                         isList = true;
                     }
                     n = ((lys_node_uses*)n)->grp->child;
                 }
-                if (n->nodetype == LYS_LIST)
+                if (n->nodetype & (LYS_LIST | LYS_LEAF | LYS_LEAFLIST))
                     isList = true;
 
                 //if (uses->grp->child->nodetype == LYS_LIST)
@@ -2449,13 +2470,25 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
                     else
                         cerr << "sdfRefToNode: node must have a module" << endl;
 
-                    uses->refine->mod.list.min = ((lys_node_list*)node)->min;
-                    uses->refine->mod.list.max = ((lys_node_list*)node)->max;
+                    uint32_t min = 0, max = 0;
+                    if (node->nodetype == LYS_LIST)
+                    {
+                        min = ((lys_node_list*)node)->min;
+                        max = ((lys_node_list*)node)->max;
+                    }
+                    else if (node->nodetype == LYS_LEAFLIST)
+                    {
+                        min = ((lys_node_leaflist*)node)->min;
+                        max = ((lys_node_leaflist*)node)->max;
+                    }
+                    uses->refine->mod.list.min = min;
+                    uses->refine->mod.list.max = max;
                     if (uses->refine->mod.list.min != 0)
                         uses->refine->flags |= LYS_RFN_MINSET;
                     if (uses->refine->mod.list.max != 0)
                         uses->refine->flags |= LYS_RFN_MAXSET;
                     uses->refine_size = 1;
+
                     removeNode(*node);
                 }
                 else
@@ -2471,7 +2504,7 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
     for (int i = 0; i < tpdfStore.size(); i++)
     {
         if (ref && pathsToNodes[refString]
-                                == (lys_node*)&tpdfStore[i])
+                                == (lys_node*)tpdfStore[i])
         {
 
             lys_type *type;
@@ -2482,35 +2515,22 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
             else
                 type = &((lys_node_leaf*)node)->type;
             type->base = LY_TYPE_DER;
-            type->der = &tpdfStore[i];
-/*
-            type = &((lys_tpdf*)node)->type;
-            type->base = LY_TYPE_DER;
-            type->der = &tpdfStore[i];
-*/
-            //cout << &((lys_node_leaf*)node)->type<< " address of *nodes type " << avoidNull(node->name) << endl;
+            type->der = tpdfStore[i];
 
-            /*lys_type type = {};
-            type.parent = ((lys_node_leaf*)node)->type.parent;
-            type.base = LY_TYPE_DER;
-
-//            missingTpdfOfType.push_back(tuple<string, lys_type*>{ref->getName(),
-//                    &((lys_node_leaf*)node)->type});
-
-            type.der = &tpdfStore[i];
-
-            ((lys_tpdf*)node)->type = type;
-*/
             return node;
         }
     }
 
     // TODO: what for references to sdfThings & sdfObjects etc?
 
-    if (data->getReference() && data->getReference()->getTopLevelFile())
-    {
-        sdfFile *parent = data->getReference()->getTopLevelFile();
+    // If the reference is from another file-object, import it
+    sdfCommon *r = data->getReference();
+    sdfFile *parent = NULL;
+    if (r)
+        parent = r->getTopLevelFile();
 
+    if (parent && parent != data->getTopLevelFile())
+    {
         shared_ptr<lys_module> m(new lys_module());
         storeVoidPointer((shared_ptr<void>)m);
         m->ctx = module.ctx;
@@ -2530,12 +2550,9 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
         module.imp_size++;
 
         lys_node *n = sdfRefToNode(data, node, module, nodeIsTpdf);
-
+/*
         string mFileName = string(m->name) + ".yang";
         const char * mFileNameChar = storeString(mFileName);
-
-        // load the module into the context
-        //ly_ctx_load_module(module.ctx, m->name, m->rev->date);
 
         cout << "Printing imported module to file " << mFileName;
         lys_print_path(mFileNameChar, m.get(), LYS_OUT_YANG, NULL, 0, 0);
@@ -2544,7 +2561,7 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
         cout << "Validation of imported module";
         lys_parse_path(m->ctx, mFileNameChar, LYS_IN_YANG);
         cout << "-> finished" << endl;
-
+*/
         return n;
     }
 
@@ -2554,18 +2571,21 @@ lys_node* sdfRefToNode(sdfData *data, lys_node *node, lys_module &module,
     return NULL;
 }
 
-struct lys_tpdf* sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf,
-        vector<tuple<sdfData*, lys_tpdf*>> &openRefsTpdf)
+struct lys_tpdf* sdfDataToTypedef(sdfData *data, lys_tpdf *tpdf,
+        lys_module &module, vector<tuple<sdfData*, lys_tpdf*>> &openRefsTpdf)
 {
+    //tpdf = storeTypedef(*tpdf);
+
     if (!data)
     {
         cerr << "sdfDataToTypedef: sdfData element must not be NULL" << endl;
         return NULL;
     }
-    tpdf->name = storeString(data->getName());//data->getNameAsArray();
+    tpdf->name = storeString(data->getName());
     tpdf->dsc = storeString(data->getDescription());
     tpdf->ref = NULL;
     tpdf->ext_size = 0;
+    tpdf->module = &module;
     if (data->getUnits() != "")
         tpdf->units = data->getUnitsAsArray();
 
@@ -2575,7 +2595,6 @@ struct lys_tpdf* sdfDataToTypedef(sdfData *data, struct lys_tpdf *tpdf,
 
     tpdf->dflt = storeString(data->getDefaultAsString());
 
-    tpdf = storeTypedef(*tpdf);
     if (data->getReference())
     {
         openRefsTpdf.push_back(
@@ -2787,6 +2806,13 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module,
         vector<tuple<sdfData*, lys_node*>> &openRefs,
         vector<tuple<sdfData*, lys_tpdf*>> &openRefsTpdf)
 {
+    if (module.tpdf_size == 0)
+    {
+        // TODO: choose size better
+        shared_ptr<lys_tpdf[]> tpdfs(new lys_tpdf[1000]());
+        storeVoidPointer((shared_ptr<void>)tpdfs);
+        module.tpdf = tpdfs.get();
+    }
     uint16_t cnt = tpdfStore.size();
     sdfData *data;
     for (int i = 0; i < datatypes.size(); i++)
@@ -2798,10 +2824,11 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module,
                 && data->getSimpType() != json_object
                 && data->getSimpType() != json_array)
         {
-            shared_ptr<lys_tpdf> t(new lys_tpdf());
-            t = make_shared<lys_tpdf>(*sdfDataToTypedef(data, t.get(),
-                    openRefsTpdf));
-            t->module = &module;
+            //cout << data->getName() << endl;
+            storeTypedef(&module.tpdf[module.tpdf_size]);
+            sdfDataToTypedef(data, &module.tpdf[module.tpdf_size], module,
+                    openRefsTpdf);
+            module.tpdf_size++;
             cnt++;
         }
         // else create a grouping
@@ -3072,6 +3099,7 @@ void convertEvents(vector<sdfEvent*> events, lys_module &module,
         {
             lys_node *outputChild = sdfDataToNode(outData, outputChild, module,
                     openRefs);
+
             if (outputChild->nodetype == LYS_CONTAINER)
             {
                 notif->child = outputChild->child;
@@ -3202,8 +3230,8 @@ struct lys_module* sdfObjectToModule(sdfObject &object, lys_module &module,
         convertNamespaceSection(object.getNamespace(), module);
     }
 
-    module.tpdf = tpdfStore.data();
-    module.tpdf_size = tpdfStore.size();
+    //module.tpdf = tpdfStore.data();
+    //module.tpdf_size = tpdfStore.size();
 
     return &module;
 }
@@ -3337,6 +3365,24 @@ struct lys_module* sdfFileToModule(sdfFile &file, lys_module &module)
     assignOpenRefs(module, openRefs, openRefsTpdf);
     convertInfoBlock(file.getInfo(), module);
     convertNamespaceSection(file.getNamespace(), module);
+
+    for (int i = 0; i < module.imp_size; i++)
+    {
+        lys_module *m = module.imp[i].module;
+        if (m != helper)
+        {
+            string mFileName = string(m->name) + ".yang";
+            const char * mFileNameChar = storeString(mFileName);
+
+            cout << "Printing imported module to file " << mFileName;
+            lys_print_path(mFileNameChar, m, LYS_OUT_YANG, NULL, 0, 0);
+            cout << " -> finished" << endl;
+
+            cout << "Validation of imported module";
+            lys_parse_path(m->ctx, mFileNameChar, LYS_IN_YANG);
+            cout << "-> finished" << endl;
+        }
+    }
 
     return &module;
 }

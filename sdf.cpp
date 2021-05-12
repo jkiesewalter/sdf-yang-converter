@@ -71,6 +71,7 @@ jsonDataType stringToJsonDType(string str)
 void loadContext(const char *path = ".")
 {
     contextLoaded = true;
+    isContext = true;
 
     DIR *dir;
     struct dirent *ent;
@@ -87,15 +88,13 @@ void loadContext(const char *path = ".")
         }
         closedir (dir);
 
-        //shared_ptr<sdfFile> f(new sdfFile());
-        static sdfFile f;
-        static vector<sdfFile> files;
+        static shared_ptr<sdfFile[]> files(new sdfFile[names.size()]());
         for (int i = 0; i < names.size(); i++)
         {
-            //f.fromFile(names[i]);
-            //files.push_back(f);
+            cout << names[i] << endl;
+            files[i].fromFile(names[i]);
         }
-        f.fromFile("alarm_types.sdf.json");
+        cout << "D" << endl;
     }
     else
     {
@@ -121,6 +120,11 @@ sdfCommon* refToCommon(string ref, std::string nsPrefix)
 
     else if (regex_match(ref, sm, diffNsRegex))
         refAlter = "#/" + string(sm[1]);
+
+//    cout << "!!!" << endl;
+//    cout << ref << endl;
+//    cout << nsPrefix << endl;
+//    cout << refAlter << endl;
 
     // Look through definitions for ref / alternative ref
     if (existingDefinitonsGlobal[ref])
@@ -151,7 +155,11 @@ vector<tuple<string, sdfCommon*>> assignRefs(
     for (tuple<string, sdfCommon*> unRefs : unassignedRefs)
     {
         tie(name, com) = unRefs;
-        sdfCommon *ref = refToCommon(name);
+        sdfFile *file = com->getTopLevelFile();
+        string nsPrefix = "";
+        if (file && file->getNamespace())
+            nsPrefix = file->getNamespace()->getDefaultNamespace();
+        sdfCommon *ref = refToCommon(name, nsPrefix);
 
         if (com && ref)
         {
@@ -321,6 +329,7 @@ void sdfObjectElement::setParentObject(sdfObject *_parentObject)
     this->parentObject = _parentObject;
 }
 
+/*
 string sdfObjectElement::generateReferenceString()
 {
     if (this->getParentObject())
@@ -336,7 +345,7 @@ string sdfObjectElement::generateReferenceString()
                 << endl;
         return "";
     }
-}
+}*/
 
 sdfInfoBlock::sdfInfoBlock(string _title, string _version, string _copyright,
         string _license)
@@ -1033,52 +1042,97 @@ string sdfData::getUnits()
     return units;
 }
 
-string sdfData::generateReferenceString()
-{
-    sdfCommon *parent = this->getParentCommon();
-    sdfFile *parentFile = this->getParentFile();
+//bool sdfData::hasChild(sdfCommon *child) const
+//{
+//    if (item_constr && (item_constr == child
+//            || find(item_constr->getObjectProperties().begin(),
+//                    item_constr->getObjectProperties().end(), child)
+//                    != item_constr->getObjectProperties().end()))
+//        return true;
+//
+//    else if (find(objectProperties.begin(), objectProperties.end(), child)
+//            != objectProperties.end())
+//        return true;
+//    else if (find(sdfChoice.begin(), sdfChoice.end(),  child)
+//            != sdfChoice.end())
+//        return true;
+//
+//    return false;
+//}
 
-    if (!parent && !parentFile)
+string sdfData::generateReferenceString(sdfCommon *child)
+{
+    if (!child)
+        return this->sdfCommon::generateReferenceString();
+
+    sdfCommon *parent = this->getParent();
+    sdfFile *parentFile = this->getParentFile();
+    string childRef = "";
+
+    if (item_constr == child)
     {
-        cerr << "sdfData::generateReferenceString(): sdfData object "
-                + this->getName() + " has no assigned parent" << endl;
-        return "";
+        childRef = "";
+    }
+    // else if child is part of the objectProperties/choices/itemConstraint
+    else if (find(objectProperties.begin(), objectProperties.end(), child)
+            != objectProperties.end()
+            || find(sdfChoice.begin(), sdfChoice.end(),  child)
+            != sdfChoice.end()
+            || (item_constr && find(item_constr->getObjectProperties().begin(),
+                    item_constr->getObjectProperties().end(), child)
+                    != item_constr->getObjectProperties().end()))
+    {
+        childRef = "/" + child->getName();
     }
     else
-    {
-        sdfData *d = dynamic_cast<sdfData*>(parent);
-        sdfObject *o = dynamic_cast<sdfObject*>(parent);
-        sdfAction *a = dynamic_cast<sdfAction*>(parent);
-        sdfEvent *e = dynamic_cast<sdfEvent*>(parent);
+        cerr << "sdfData::generateReferenceString " + child->getName()
+        + " does not belong to " + this->getName()
+        + " but references it as parent" << endl;
 
-        // if the parent is an item constraint data element
-        if (d && !o && !a && !e && this->isItemConstr())
-            return d->generateReferenceString();
-        // if the parent is another sdfData object
-        else if (d && !o  && !a && !e)
-            return parent->generateReferenceString()
-                    + "/" + this->getName();
+    if (parent)
+        return parent->generateReferenceString(this) + childRef;
+    else if (parentFile)
+        return parentFile->generateReferenceString(this) + childRef;
+    else
+        cerr << "sdfData::generateReferenceString(): sdfData object "
+                + this->getName() + " has no assigned parent" << endl;
+    return "";
 
-        // else if this is the input data of an sdfAction object
-        else if (a && a->getInputData() == this)
-            return parent->generateReferenceString()
-                    + "/sdfInputData";
-
-        // else if this is the output data of an sdfAction object
-        // OR if this is the output data of an sdfEvent object
-        else if ((a && a->getOutputData() == this)
-                || (e && e->getOutputData() == this))
-            return parent->generateReferenceString()
-                    + "/sdfOutputData";
-
-        else if (parentFile)
-            return parentFile->generateReferenceString() + "sdfData/"
-                    + this->getName();
-
-        else if (parent)
-            return parent->generateReferenceString()
-                    + "/sdfData/" + this->getName();
-    }
+//    else
+//    {
+//        sdfData *d = dynamic_cast<sdfData*>(parent);
+//        sdfObject *o = dynamic_cast<sdfObject*>(parent);
+//        sdfAction *a = dynamic_cast<sdfAction*>(parent);
+//        sdfEvent *e = dynamic_cast<sdfEvent*>(parent);
+//
+//        // if the parent is an item constraint data element
+//        if (d && !o && !a && !e && this->isItemConstr())
+//            return d->generateReferenceString();
+//        // if the parent is another sdfData object
+//        else if (d && !o  && !a && !e)
+//            return parent->generateReferenceString()
+//                    + "/" + this->getName();
+//
+//        // else if this is the input data of an sdfAction object
+//        else if (a && a->getInputData() == this)
+//            return parent->generateReferenceString()
+//                    + "/sdfInputData";
+//
+//        // else if this is the output data of an sdfAction object
+//        // OR if this is the output data of an sdfEvent object
+//        else if ((a && a->getOutputData() == this)
+//                || (e && e->getOutputData() == this))
+//            return parent->generateReferenceString()
+//                    + "/sdfOutputData";
+//
+//        else if (parentFile)
+//            return parentFile->generateReferenceString() + "sdfData/"
+//                    + this->getName();
+//
+//        else if (parent)
+//            return parent->generateReferenceString()
+//                    + "/sdfData/" + this->getName();
+//    }
     // this should never be reached
     return "";
 }
@@ -1314,10 +1368,66 @@ sdfData* sdfEvent::getOutputData()
     return this->outputData;
 }
 
-string sdfEvent::generateReferenceString()
+//bool sdfEvent::hasChild(sdfCommon *child) const
+//{
+//    if (outputData && (outputData == child
+//            || outputData->getItemConstr() == child
+//            || find(outputData->getObjectProperties().begin(),
+//                    outputData->getObjectProperties().end(), child)
+//                    != outputData->getObjectProperties().end()))
+//        return true;
+//
+//    else if (find(datatypes.begin(), datatypes.end(), child) != datatypes.end())
+//        return true;
+//
+//    return false;
+//}
+
+string sdfEvent::generateReferenceString(sdfCommon *child)
 {
+    if (!child)
+        return this->sdfCommon::generateReferenceString();
+
+    string childRef = "";
+    if (outputData == child)
+    {
+        childRef = "/sdfOutputData";
+    }
+    else if (outputData)
+    {
+        vector<sdfData*> outOPs = outputData->getObjectProperties();
+        if (outputData->getItemConstr() == child
+                || find(outOPs.begin(), outOPs.end(), child) != outOPs.end())
+            childRef = "/sdfOutputData/" + child->getName();
+    }
+    else if (find(datatypes.begin(), datatypes.end(), child) != datatypes.end())
+    {
+        childRef = "/sdfData/" + child->getName();
+    }
+    else
+    {
+        cerr << "sdfEvent::generateReferenceString " + child->getName()
+        + " does not belong to " + this->getName()
+        + " but references it as parent" << endl;
+    }
+
+    if (this->getParent())
+    {
+        return this->getParent()->generateReferenceString(this) + childRef;
+    }
+    else if (this->getParentFile())
+    {
+        return this->getParentFile()->generateReferenceString(this) + childRef;
+    }
+    else
+    {
+        cerr << "Event " + this->getName() + " has no assigned parent" << endl;
+    }
+
+    return "";
+    /*
     return this->sdfObjectElement::generateReferenceString()
-        + "sdfEvent/" + this->getName();
+        + "sdfEvent/" + this->getName();*/
 }
 
 json sdfEvent::eventToJson(json prefix)
@@ -1428,10 +1538,76 @@ vector<sdfData*> sdfAction::getDatatypes()
     return this->datatypes;
 }
 
-string sdfAction::generateReferenceString()
+//bool sdfAction::hasChild(sdfCommon *child) const
+//{
+//    if (inputData && (inputData == child
+//            || inputData->getItemConstr() == child
+//            || find(inputData->getObjectProperties().begin(),
+//                    inputData->getObjectProperties().end(), child)
+//                    != inputData->getObjectProperties().end()))
+//        return true;
+//
+//    else if (outputData && (outputData == child
+//            || outputData->getItemConstr() == child
+//            || find(outputData->getObjectProperties().begin(),
+//                    outputData->getObjectProperties().end(), child)
+//                    != outputData->getObjectProperties().end()))
+//        return true;
+//
+//    else if (find(datatypes.begin(), datatypes.end(), child) != datatypes.end())
+//        return true;
+//
+//    return false;
+//}
+
+string sdfAction::generateReferenceString(sdfCommon *child)
 {
+    if (!child)
+        return this->sdfCommon::generateReferenceString();
+
+    string childRef = "";
+    if (inputData == child)
+        childRef = "/sdfInputData";
+    else if (inputData)
+    {
+        vector<sdfData*> inOPs = inputData->getObjectProperties();
+        if (inputData->getItemConstr() == child
+                || find(inOPs.begin(), inOPs.end(), child) != inOPs.end())
+            childRef = "/sdfInputData/" + child->getName();
+    }
+    else if (outputData == child)
+        childRef = "/sdfOutputData";
+    else if (outputData)
+    {
+        vector<sdfData*> outOPs = outputData->getObjectProperties();
+        if (outputData->getItemConstr() == child
+                || find(outOPs.begin(), outOPs.end(), child) != outOPs.end())
+            childRef = "/sdfOutputData/" + child->getName();
+    }
+    else if (find(datatypes.begin(), datatypes.end(), child) != datatypes.end())
+    {
+        childRef = "/sdfData/" + child->getName();
+    }
+    else
+        cerr << "sdfAction::generateReferenceString " + child->getName()
+        + " does not belong to " + this->getName()
+        + " but references it as parent" << endl;
+
+    if (this->getParent())
+        return this->getParent()->generateReferenceString(this) + childRef;
+
+    else if (this->getParentFile())
+        return this->getParentFile()->generateReferenceString(this) + childRef;
+
+    else
+    {
+        cerr << "Action " + this->getName() + " has no assigned parent" << endl;
+        return "";
+    }
+    /*
     return this->sdfObjectElement::generateReferenceString()
         + "sdfAction/" + this->getName();
+        */
 }
 
 json sdfAction::actionToJson(json prefix)
@@ -1503,10 +1679,17 @@ sdfProperty::sdfProperty(sdfData &data)
         choice->setParentCommon(this);
 }
 
-string sdfProperty::generateReferenceString()
+//bool sdfProperty::hasChild(sdfCommon *child) const
+//{
+//    return this->sdfData::hasChild(child);
+//}
+
+string sdfProperty::generateReferenceString(sdfCommon *child)
 {
-    return this->sdfObjectElement::generateReferenceString()
-        + "sdfProperty/" + this->getName();
+    /*return this->sdfObjectElement::generateReferenceString()
+        + "sdfProperty/" + this->getName();*/
+
+    return this->sdfData::generateReferenceString(child);
 }
 
 json sdfProperty::propertyToJson(json prefix)
@@ -1713,8 +1896,37 @@ void sdfObject::objectToFile(string path)
     validateFile(path);
 }
 
-string sdfObject::generateReferenceString()
+string sdfObject::generateReferenceString(sdfCommon *child)
 {
+    if (!child)
+        return this->sdfCommon::generateReferenceString();
+
+    string childRef = "";
+    if (find(datatypes.begin(), datatypes.end(), child) != datatypes.end())
+        childRef = "/sdfData/";
+
+    else if (find(properties.begin(), properties.end(), child) !=
+            properties.end())
+        childRef = "/sdfProperty/";
+
+    else if (find(actions.begin(), actions.end(), child) != actions.end())
+        childRef = "/sdfAction/";
+
+    else if (find(events.begin(), events.end(), child) != events.end())
+        childRef = "/sdfEvent/";
+
+    if (parent)
+        return parent->generateReferenceString(this) + childRef
+                + child->getName();
+
+    else if (this->getParentFile())
+        return this->getParentFile()->generateReferenceString(this) + childRef
+                + child->getName();
+
+    else
+        return "#/sdfObject/" + this->getName() + childRef + child->getName();
+
+    /*
     if (this->parent != NULL)
         return this->parent->generateReferenceString() + "/sdfObject/"
                 + this->getName();
@@ -1725,6 +1937,7 @@ string sdfObject::generateReferenceString()
 
     else
         return "#/sdfObject/" + this->getName();
+        */
 }
 
 sdfThing::sdfThing(string _name, string _description, sdfCommon *_reference,
@@ -1867,8 +2080,38 @@ void sdfThing::setParentThing(sdfThing *parentThing)
     this->parent = parentThing;
 }
 
-string sdfThing::generateReferenceString()
+string sdfThing::generateReferenceString(sdfCommon *child)
 {
+    if (!child)
+        return this->sdfCommon::generateReferenceString();
+
+    string childRef = "";
+    if (find(childThings.begin(), childThings.end(), child)
+            != childThings.end())
+        childRef = "/sdfThing/";
+
+    else if (find(childObjects.begin(), childObjects.end(), child)
+            != childObjects.end())
+        childRef = "/sdfObject/";
+
+    else
+        cerr << "sdfThing::generateReferenceString " + child->getName()
+        + " does not belong to " + this->getName()
+        + " but references it as parent" << endl;
+
+    if (parent)
+        return parent->generateReferenceString(this) + childRef
+                + child->getName();
+
+    else if (this->getParentFile())
+    {
+        return this->getParentFile()->generateReferenceString(this) + childRef
+                + child->getName();
+    }
+
+    else
+        return "#/sdfThing/" + this->getName() + childRef + child->getName();
+    /*
     if (this->parent != NULL)
         return this->parent->generateReferenceString() + "/sdfThing/"
                 + this->getName();
@@ -1878,7 +2121,7 @@ string sdfThing::generateReferenceString()
                 "sdfThing/" + this->getName();
 
     else
-        return "#/sdfThing/" + this->getName();
+        return "#/sdfThing/" + this->getName();*/
 }
 
 void sdfCommon::jsonToCommon(json input)
@@ -1907,8 +2150,8 @@ void sdfCommon::jsonToCommon(json input)
     {
         // if not, add to existing definitions
         existingDefinitons[this->generateReferenceString()] = this;
-        //cout << "!!!jsonToCommon: " << this->generateReferenceString() <<" "
-        //    << this->getName()<< endl;
+//        cout << "!!!jsonToCommon: " << this->generateReferenceString() <<" "
+//            << this->getName()<< endl;
     }
 }
 
@@ -2441,6 +2684,24 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
     return this;
 }
 
+//bool sdfObject::hasChild(sdfCommon *child) const
+//{
+//    if (find(properties.begin(), properties.end(), child)
+//            != properties.end())
+//        return true;
+//    else if (find(datatypes.begin(), datatypes.end(), child)
+//            != datatypes.end())
+//        return true;
+//    else if (find(actions.begin(), actions.end(), child)
+//            != actions.end())
+//        return true;
+//    else if (find(events.begin(), events.end(), child)
+//            != events.end())
+//        return true;
+//
+//    return false;
+//}
+
 sdfObject* sdfObject::fileToObject(string path, bool testForThing)
 {
     if (!contextLoaded)
@@ -2457,6 +2718,18 @@ sdfObject* sdfObject::fileToObject(string path, bool testForThing)
         cerr << "Error opening file" << endl;
     return this->jsonToObject(json_input, testForThing);
 }
+
+//bool sdfThing::hasChild(sdfCommon *child) const
+//{
+//    if (find(childThings.begin(), childThings.end(), child)
+//            != childThings.end())
+//        return true;
+//    else if (find(childObjects.begin(), childObjects.end(), child)
+//            != childObjects.end())
+//        return true;
+//
+//    return false;
+//}
 
 sdfThing* sdfThing::jsonToThing(json input, bool nested)
 {
@@ -3629,13 +3902,39 @@ std::vector<sdfData*> sdfFile::getDatatypes()
     return datatypes;
 }
 
-std::string sdfFile::generateReferenceString()
+std::string sdfFile::generateReferenceString(sdfCommon *child)
 {
+    string childRef = "";
+    if (child)
+    {
+        if (find(things.begin(), things.end(), child) != things.end())
+            childRef = "/sdfThing/" + child->getName();
+
+        else if (find(objects.begin(), objects.end(), child) != objects.end())
+            childRef = "/sdfObject/" + child->getName();
+
+        else if (find(datatypes.begin(), datatypes.end(), child) != datatypes.end())
+            childRef = "/sdfData/" + child->getName();
+
+        else if (find(properties.begin(), properties.end(), child)
+                != properties.end())
+            childRef = "/sdfProperty/" + child->getName();
+
+        else if (find(actions.begin(), actions.end(), child) != actions.end())
+            childRef = "/sdfAction/" + child->getName();
+
+        else if (find(events.begin(), events.end(), child) != events.end())
+            childRef = "/sdfEvent/" + child->getName();
+
+        else
+            cerr << "sdfFile::generateReferenceString: " + child->getName()
+            + " references file but could not be found in file" << endl;
+    }
     if (this->getNamespace()
             && this->getNamespace()->getDefaultNamespace() != "")
-        return this->getNamespace()->getDefaultNamespace() + ":/";
+        return this->getNamespace()->getDefaultNamespace() + ":" + childRef;
 
-    return "#/";
+    return "#" + childRef;
 }
 
 nlohmann::json sdfFile::toJson(nlohmann::json prefix)
@@ -3690,6 +3989,8 @@ void sdfFile::toFile(std::string path)
 
 sdfFile* sdfFile::fromJson(nlohmann::json input)
 {
+    // first check for the namespace etc (to determine whether this file
+    // contributes to a global namespace -> whether default namespace is given)
     for (json::iterator it = input.begin(); it != input.end(); ++it)
     {
         if (it.key() == "info" && !it.value().empty())
@@ -3710,7 +4011,14 @@ sdfFile* sdfFile::fromJson(nlohmann::json input)
         {
             ns->jsonToNamespace(input["namespace"]);
         }
-        else if (it.key() == "sdfThing" && !it.value().empty())
+    }
+    if (isContext && (!ns || ns->getDefaultNamespace() == ""))
+        return NULL;
+
+    // then check for things etc
+    for (json::iterator it = input.begin(); it != input.end(); ++it)
+    {
+        if (it.key() == "sdfThing" && !it.value().empty())
         {
             for (json::iterator jt = it.value().begin();
                     jt != it.value().end(); ++jt)
@@ -3820,21 +4128,52 @@ sdfFile* sdfFile::fromFile(std::string path)
 sdfFile* sdfCommon::getTopLevelFile()
 {
     sdfCommon *parent = this;
-    while (parent && !parent->getParentFile())
-    {
-        sdfData *d = dynamic_cast<sdfData*>(parent);
-        sdfObject *o = dynamic_cast<sdfObject*>(parent);
-        sdfThing *t = dynamic_cast<sdfThing*>(parent);
-        sdfObjectElement *oe = dynamic_cast<sdfObjectElement*>(parent);
+    while (parent->getParent() && !parent->getParentFile())
+        parent = parent->getParent();
 
-        if (t)
-            parent = t->getParentThing();
-        else if (o)
-            parent = o->getParentThing();
-        else if (oe)
-            parent = oe->getParentObject();
-        else if (d)
-            parent = d->getParentCommon();
-    }
     return parent->getParentFile();
+}
+
+sdfCommon* sdfObjectElement::getParent() const
+{
+    return (sdfCommon*)this->getParentObject();
+}
+
+sdfCommon* sdfData::getParent() const
+{
+
+    return this->getParentCommon();
+}
+
+sdfCommon* sdfObject::getParent() const
+{
+    return (sdfCommon*)this->getParentThing();
+}
+
+sdfCommon* sdfThing::getParent() const
+{
+    return (sdfCommon*)this->getParentThing();
+}
+
+sdfCommon* sdfProperty::getParent() const
+{
+    return this->sdfObjectElement::getParent();
+}
+
+std::string sdfCommon::generateReferenceString()
+{
+    if (this->getParent())
+    {
+        //cout << this->getParent()->generateReferenceString(this) << endl;
+        return this->getParent()->generateReferenceString(this);
+    }
+    else if (this->getParentFile())
+    {
+        //cout << this->getParentFile()->generateReferenceString(this) << endl;
+        return this->getParentFile()->generateReferenceString(this);
+    }
+
+    cerr << "sdfCommon::generateReferenceString: " + this->getName()
+            + " has no assigned parent object" << endl;
+    return "";
 }

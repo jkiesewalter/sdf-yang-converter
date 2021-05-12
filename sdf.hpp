@@ -87,6 +87,8 @@ public:
     sdfData* getThisAsSdfData();
     sdfFile* getParentFile() const;
     sdfFile* getTopLevelFile();
+    virtual sdfCommon* getParent() const = 0;
+    //virtual bool hasChild(sdfCommon *child) const = 0;
     // setters
     void setName(std::string _name);
     void setLabel(std::string _label);
@@ -96,7 +98,8 @@ public:
     void setParentFile(sdfFile *file);
     //void setParentCommon(sdfCommon *parentCommon);
     // printing
-    virtual std::string generateReferenceString() = 0;
+    std::string generateReferenceString();
+    virtual std::string generateReferenceString(sdfCommon *child) = 0;
     nlohmann::json commonToJson(nlohmann::json prefix);
     void jsonToCommon(nlohmann::json input);
 private:
@@ -117,8 +120,10 @@ public:
             sdfObject *_parentObject = NULL);
     ~sdfObjectElement();
     sdfObject* getParentObject() const;
+    sdfCommon* getParent() const;
     void setParentObject(sdfObject *parentObject);
-    std::string generateReferenceString();
+    virtual std::string generateReferenceString(sdfCommon *child) = 0;
+    //virtual bool hasChild(sdfCommon *child) const = 0;
 private:
     sdfObject *parentObject;
 };
@@ -362,6 +367,7 @@ public:
     std::vector<std::string> getConstantStringArray() const;
     std::vector<std::string> getDefaultStringArray() const;
     sdfCommon* getParentCommon() const;
+    sdfCommon* getParent() const;
     sdfData* getItemConstr() const;
     sdfData* getItemConstrOfRefs() const;
     bool isItemConstr() const;
@@ -370,10 +376,11 @@ public:
     std::vector<sdfData*> getObjectProperties() const;
     std::vector<sdfData*> getObjectPropertiesOfRefs() const;
     std::vector<std::string> getRequiredObjectProperties() const;
+    //(sdfCommon *child) const;
     // parsing
     void parseDefault(const char *value);
     void parseDefaultArray(lys_node_leaflist *node);
-    std::string generateReferenceString();
+    std::string generateReferenceString(sdfCommon *child = NULL);
     nlohmann::json dataToJson(nlohmann::json prefix);
     sdfData* jsonToData(nlohmann::json input);
 
@@ -475,8 +482,9 @@ public:
     // getters
     std::vector<sdfData*> getDatatypes();
     sdfData* getOutputData();
+    //bool hasChild(sdfCommon *child) const;
     // parsing
-    std::string generateReferenceString();
+    std::string generateReferenceString(sdfCommon *child = NULL);
     nlohmann::json eventToJson(nlohmann::json prefix);
     sdfEvent* jsonToEvent(nlohmann::json input);
 private:
@@ -507,8 +515,9 @@ public:
     std::vector<sdfData*> getRequiredInputData();
     sdfData* getOutputData();
     std::vector<sdfData*> getDatatypes();
+    //(sdfCommon *child) const;
     // parsing
-    std::string generateReferenceString();
+    std::string generateReferenceString(sdfCommon *child = NULL);
     nlohmann::json actionToJson(nlohmann::json prefix);
     sdfAction* jsonToAction(nlohmann::json input);
 
@@ -529,8 +538,11 @@ public:
             std::vector<sdfCommon*> _required = {},
              sdfObject *_parentObject = NULL);
     sdfProperty(sdfData& data);
+    // getters
+    sdfCommon* getParent() const;
+    //(sdfCommon *child) const;
     // parsing
-    std::string generateReferenceString();
+    std::string generateReferenceString(sdfCommon *child = NULL);
     nlohmann::json propertyToJson(nlohmann::json prefix);
     sdfProperty* jsonToProperty(nlohmann::json input);
 };
@@ -563,8 +575,10 @@ public:
     std::vector<sdfEvent*> getEvents();
     std::vector<sdfData*> getDatatypes();
     sdfThing* getParentThing() const;
+    sdfCommon* getParent() const;
+    //(sdfCommon *child) const;
     // parsing
-    std::string generateReferenceString();
+    std::string generateReferenceString(sdfCommon *child = NULL);
     nlohmann::json objectToJson(nlohmann::json prefix,
             bool print_info_namespace = true);
     std::string objectToString(bool print_info_namespace = true);
@@ -606,8 +620,10 @@ public:
     std::vector<sdfThing*> getThings() const;
     std::vector<sdfObject*> getObjects() const;
     sdfThing* getParentThing() const;
+    sdfCommon* getParent() const;
+    //(sdfCommon *child) const;
     // parsing
-    std::string generateReferenceString();
+    std::string generateReferenceString(sdfCommon *child = NULL);
     nlohmann::json thingToJson(nlohmann::json prefix,
             bool print_info_namespace = false);
     std::string thingToString(bool print_info_namespace = true);
@@ -663,7 +679,7 @@ public:
     std::vector<sdfEvent*> getEvents();
     std::vector<sdfData*> getDatatypes();
     // parsing
-    std::string generateReferenceString();
+    std::string generateReferenceString(sdfCommon *child = NULL);
     nlohmann::json toJson(nlohmann::json prefix);
     std::string toString();
     void toFile(std::string path);

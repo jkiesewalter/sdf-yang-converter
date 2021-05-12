@@ -81,7 +81,3 @@ Compile the code with `make`. Run the converter with `./converter -f path/to/inp
 |sdfRequired|Set the mandatory statement of the corresponding leaf/choice (which are the only nodes that can explicitely be marked as mandatory). If the corresponding node is not a leaf/choice make the first descendant that is a leaf/choice mandatory|done||
 
 \* please note that an *(object) property* is not the same as sdfProperty and *type object* is not the same as sdfObject
-
-
-0x56522ae101b0
-0x56522ae101b0
