@@ -98,8 +98,9 @@ public:
     void setParentFile(sdfFile *file);
     //void setParentCommon(sdfCommon *parentCommon);
     // printing
-    std::string generateReferenceString();
-    virtual std::string generateReferenceString(sdfCommon *child) = 0;
+    std::string generateReferenceString(bool import = false);
+    virtual std::string generateReferenceString(sdfCommon *child,
+            bool import = false) = 0;
     nlohmann::json commonToJson(nlohmann::json prefix);
     void jsonToCommon(nlohmann::json input);
 private:
@@ -122,7 +123,8 @@ public:
     sdfObject* getParentObject() const;
     sdfCommon* getParent() const;
     void setParentObject(sdfObject *parentObject);
-    virtual std::string generateReferenceString(sdfCommon *child) = 0;
+    virtual std::string generateReferenceString(sdfCommon *child,
+            bool import = false) = 0;
     //virtual bool hasChild(sdfCommon *child) const = 0;
 private:
     sdfObject *parentObject;
@@ -376,11 +378,13 @@ public:
     std::vector<sdfData*> getObjectProperties() const;
     std::vector<sdfData*> getObjectPropertiesOfRefs() const;
     std::vector<std::string> getRequiredObjectProperties() const;
+    sdfData* getThisAsSdfData();
     //(sdfCommon *child) const;
     // parsing
     void parseDefault(const char *value);
     void parseDefaultArray(lys_node_leaflist *node);
-    std::string generateReferenceString(sdfCommon *child = NULL);
+    std::string generateReferenceString(sdfCommon *child = NULL,
+            bool import = false);
     nlohmann::json dataToJson(nlohmann::json prefix);
     sdfData* jsonToData(nlohmann::json input);
 
@@ -484,7 +488,8 @@ public:
     sdfData* getOutputData();
     //bool hasChild(sdfCommon *child) const;
     // parsing
-    std::string generateReferenceString(sdfCommon *child = NULL);
+    std::string generateReferenceString(sdfCommon *child = NULL,
+            bool import = false);
     nlohmann::json eventToJson(nlohmann::json prefix);
     sdfEvent* jsonToEvent(nlohmann::json input);
 private:
@@ -517,7 +522,8 @@ public:
     std::vector<sdfData*> getDatatypes();
     //(sdfCommon *child) const;
     // parsing
-    std::string generateReferenceString(sdfCommon *child = NULL);
+    std::string generateReferenceString(sdfCommon *child = NULL,
+            bool import = false);
     nlohmann::json actionToJson(nlohmann::json prefix);
     sdfAction* jsonToAction(nlohmann::json input);
 
@@ -542,7 +548,8 @@ public:
     sdfCommon* getParent() const;
     //(sdfCommon *child) const;
     // parsing
-    std::string generateReferenceString(sdfCommon *child = NULL);
+    std::string generateReferenceString(sdfCommon *child = NULL,
+            bool import = false);
     nlohmann::json propertyToJson(nlohmann::json prefix);
     sdfProperty* jsonToProperty(nlohmann::json input);
 };
@@ -578,7 +585,8 @@ public:
     sdfCommon* getParent() const;
     //(sdfCommon *child) const;
     // parsing
-    std::string generateReferenceString(sdfCommon *child = NULL);
+    std::string generateReferenceString(sdfCommon *child = NULL,
+            bool import = false);
     nlohmann::json objectToJson(nlohmann::json prefix,
             bool print_info_namespace = true);
     std::string objectToString(bool print_info_namespace = true);
@@ -623,7 +631,8 @@ public:
     sdfCommon* getParent() const;
     //(sdfCommon *child) const;
     // parsing
-    std::string generateReferenceString(sdfCommon *child = NULL);
+    std::string generateReferenceString(sdfCommon *child = NULL,
+            bool import = false);
     nlohmann::json thingToJson(nlohmann::json prefix,
             bool print_info_namespace = false);
     std::string thingToString(bool print_info_namespace = true);
@@ -679,7 +688,8 @@ public:
     std::vector<sdfEvent*> getEvents();
     std::vector<sdfData*> getDatatypes();
     // parsing
-    std::string generateReferenceString(sdfCommon *child = NULL);
+    std::string generateReferenceString(sdfCommon *child = NULL,
+            bool import = false);
     nlohmann::json toJson(nlohmann::json prefix);
     std::string toString();
     void toFile(std::string path);

@@ -73,6 +73,7 @@ void loadContext(const char *path = ".")
     contextLoaded = true;
     isContext = true;
 
+    cout << "Searching for SDF context files..." << endl;
     DIR *dir;
     struct dirent *ent;
     if ((dir = opendir (path)) != NULL)
@@ -91,10 +92,13 @@ void loadContext(const char *path = ".")
         static shared_ptr<sdfFile[]> files(new sdfFile[names.size()]());
         for (int i = 0; i < names.size(); i++)
         {
-            cout << names[i] << endl;
+            cout << "...found: " + names[i] << endl;
             files[i].fromFile(names[i]);
         }
-        cout << "D" << endl;
+        if (names.size() == 0)
+            cout <<  "...no files found" << endl;
+
+        cout << "-> finished" << endl << endl;
     }
     else
     {
@@ -288,8 +292,13 @@ void sdfCommon::setReference(sdfCommon *common)
 
 json sdfCommon::commonToJson(json prefix)
 {
-    if (this->getReference() != NULL)
-        prefix["sdfRef"] = this->getReference()->generateReferenceString();
+    if (this->getReference())
+    {
+        bool imp = false;
+        if (this->getReference()->getTopLevelFile() != this->getTopLevelFile())
+            imp = true;
+        prefix["sdfRef"] = this->getReference()->generateReferenceString(imp);
+    }
     if (this->getLabel() != "")
         prefix["label"] = this->getLabel();
     if (this->getDescription() != "")
@@ -992,12 +1001,14 @@ sdfSubtype sdfData::getSubtype()
 
 string sdfData::getType()
 {
-    // TODO: do this?
     if (this->getReference())
     {
-        if (simpleType != json_type_undef)
-            cerr << "sdfData::getType: both reference and type given"
-            << endl;
+//        if (simpleType != json_type_undef)
+//            cerr << "sdfData::getType: " + this->getName() +
+//            " has an sdfRef and a type given (sdfRef to "
+//            + this->getReference()->getName() + " and own type "
+//            + jsonDTypeToString(simpleType) + ")" << endl;
+
         sdfData *ref = dynamic_cast<sdfData*>(this->getReference());
         if (ref)
             return ref->getType();
@@ -1013,12 +1024,14 @@ string sdfData::getType()
 
 jsonDataType sdfData::getSimpType()
 {
-    // TODO: do this?
     if (this->getReference())
     {
-        if (simpleType != json_type_undef)
-            cerr << "sdfData::getSimpType: both reference and type given"
-            << endl;
+//        if (simpleType != json_type_undef)
+//            cerr << "sdfData::getSimpType: " + this->getName() +
+//            " has an sdfRef and a type given (sdfRef to "
+//            + this->getReference()->getName() + " and own type "
+//            + jsonDTypeToString(simpleType) + ")" << endl;
+
         sdfData *ref = dynamic_cast<sdfData*>(this->getReference());
         if (ref)
             return ref->getSimpType();
@@ -1060,10 +1073,10 @@ string sdfData::getUnits()
 //    return false;
 //}
 
-string sdfData::generateReferenceString(sdfCommon *child)
+string sdfData::generateReferenceString(sdfCommon *child, bool import)
 {
     if (!child)
-        return this->sdfCommon::generateReferenceString();
+        return this->sdfCommon::generateReferenceString(import);
 
     sdfCommon *parent = this->getParent();
     sdfFile *parentFile = this->getParentFile();
@@ -1090,9 +1103,9 @@ string sdfData::generateReferenceString(sdfCommon *child)
         + " but references it as parent" << endl;
 
     if (parent)
-        return parent->generateReferenceString(this) + childRef;
+        return parent->generateReferenceString(this, import) + childRef;
     else if (parentFile)
-        return parentFile->generateReferenceString(this) + childRef;
+        return parentFile->generateReferenceString(this, import) + childRef;
     else
         cerr << "sdfData::generateReferenceString(): sdfData object "
                 + this->getName() + " has no assigned parent" << endl;
@@ -1163,9 +1176,10 @@ json sdfData::dataToJson(json prefix)
     {
         for (sdfData *i : sdfChoice)
         {
-            // TODO: this is only done because of a faulty(?) validator
-            // change back if necessary
-            i->setType(simpleType);
+            // TODO: this is only done because of the validation schema of SDF
+            // change back if schema gets changed
+            if (i->getSimpType() == json_type_undef)
+                i->setType(simpleType);
 
             json tmpJson;
             data["sdfChoice"][i->getName()]
@@ -1301,7 +1315,7 @@ json sdfData::dataToJson(json prefix)
     }*/
 
     if (simpleType != json_type_undef && !this->getReference())
-        data["type"] = derType;
+        data["type"] = jsonDTypeToString(simpleType);//derType;
 
     sdfData *parent = dynamic_cast<sdfData*>(this->getParentCommon());
     if (simpleType == json_integer
@@ -1383,10 +1397,10 @@ sdfData* sdfEvent::getOutputData()
 //    return false;
 //}
 
-string sdfEvent::generateReferenceString(sdfCommon *child)
+string sdfEvent::generateReferenceString(sdfCommon *child, bool import)
 {
     if (!child)
-        return this->sdfCommon::generateReferenceString();
+        return this->sdfCommon::generateReferenceString(import);
 
     string childRef = "";
     if (outputData == child)
@@ -1413,11 +1427,13 @@ string sdfEvent::generateReferenceString(sdfCommon *child)
 
     if (this->getParent())
     {
-        return this->getParent()->generateReferenceString(this) + childRef;
+        return this->getParent()->generateReferenceString(this, import)
+                + childRef;
     }
     else if (this->getParentFile())
     {
-        return this->getParentFile()->generateReferenceString(this) + childRef;
+        return this->getParentFile()->generateReferenceString(this, import)
+                + childRef;
     }
     else
     {
@@ -1560,10 +1576,10 @@ vector<sdfData*> sdfAction::getDatatypes()
 //    return false;
 //}
 
-string sdfAction::generateReferenceString(sdfCommon *child)
+string sdfAction::generateReferenceString(sdfCommon *child, bool import)
 {
     if (!child)
-        return this->sdfCommon::generateReferenceString();
+        return this->sdfCommon::generateReferenceString(import);
 
     string childRef = "";
     if (inputData == child)
@@ -1594,10 +1610,12 @@ string sdfAction::generateReferenceString(sdfCommon *child)
         + " but references it as parent" << endl;
 
     if (this->getParent())
-        return this->getParent()->generateReferenceString(this) + childRef;
+        return this->getParent()->generateReferenceString(this, import)
+                + childRef;
 
     else if (this->getParentFile())
-        return this->getParentFile()->generateReferenceString(this) + childRef;
+        return this->getParentFile()->generateReferenceString(this, import)
+                + childRef;
 
     else
     {
@@ -1684,12 +1702,12 @@ sdfProperty::sdfProperty(sdfData &data)
 //    return this->sdfData::hasChild(child);
 //}
 
-string sdfProperty::generateReferenceString(sdfCommon *child)
+string sdfProperty::generateReferenceString(sdfCommon *child, bool import)
 {
     /*return this->sdfObjectElement::generateReferenceString()
         + "sdfProperty/" + this->getName();*/
 
-    return this->sdfData::generateReferenceString(child);
+    return this->sdfData::generateReferenceString(child, import);
 }
 
 json sdfProperty::propertyToJson(json prefix)
@@ -1896,10 +1914,10 @@ void sdfObject::objectToFile(string path)
     validateFile(path);
 }
 
-string sdfObject::generateReferenceString(sdfCommon *child)
+string sdfObject::generateReferenceString(sdfCommon *child, bool import)
 {
     if (!child)
-        return this->sdfCommon::generateReferenceString();
+        return this->sdfCommon::generateReferenceString(import);
 
     string childRef = "";
     if (find(datatypes.begin(), datatypes.end(), child) != datatypes.end())
@@ -1916,13 +1934,17 @@ string sdfObject::generateReferenceString(sdfCommon *child)
         childRef = "/sdfEvent/";
 
     if (parent)
-        return parent->generateReferenceString(this) + childRef
+        return parent->generateReferenceString(this, import) + childRef
                 + child->getName();
 
     else if (this->getParentFile())
-        return this->getParentFile()->generateReferenceString(this) + childRef
-                + child->getName();
+        return this->getParentFile()->generateReferenceString(this, import)
+                + childRef + child->getName();
 
+    else if (import && this->getNamespace()
+            && this->getNamespace()->getDefaultNamespace() != "")
+        return this->getNamespace()->getDefaultNamespace() + ":/sdfObject/"
+                + this->getName() + childRef + child->getName();
     else
         return "#/sdfObject/" + this->getName() + childRef + child->getName();
 
@@ -2080,10 +2102,10 @@ void sdfThing::setParentThing(sdfThing *parentThing)
     this->parent = parentThing;
 }
 
-string sdfThing::generateReferenceString(sdfCommon *child)
+string sdfThing::generateReferenceString(sdfCommon *child, bool import)
 {
     if (!child)
-        return this->sdfCommon::generateReferenceString();
+        return this->sdfCommon::generateReferenceString(import);
 
     string childRef = "";
     if (find(childThings.begin(), childThings.end(), child)
@@ -2100,14 +2122,18 @@ string sdfThing::generateReferenceString(sdfCommon *child)
         + " but references it as parent" << endl;
 
     if (parent)
-        return parent->generateReferenceString(this) + childRef
+        return parent->generateReferenceString(this, import) + childRef
                 + child->getName();
 
     else if (this->getParentFile())
     {
-        return this->getParentFile()->generateReferenceString(this) + childRef
-                + child->getName();
+        return this->getParentFile()->generateReferenceString(this, import)
+                + childRef + child->getName();
     }
+    else if (import && this->getNamespace()
+            && this->getNamespace()->getDefaultNamespace() != "")
+            return this->getNamespace()->getDefaultNamespace() + ":/sdfThing/"
+                    + this->getName() + childRef + child->getName();
 
     else
         return "#/sdfThing/" + this->getName() + childRef + child->getName();
@@ -3736,11 +3762,6 @@ string sdfData::getConstantAsString()
     return constStr;
 }
 
-sdfData* sdfCommon::getThisAsSdfData()
-{
-    return dynamic_cast<sdfData*>(this);
-}
-
 void sdfCommon::setParentFile(sdfFile *file)
 {
     parentFile = file;
@@ -3902,7 +3923,7 @@ std::vector<sdfData*> sdfFile::getDatatypes()
     return datatypes;
 }
 
-std::string sdfFile::generateReferenceString(sdfCommon *child)
+std::string sdfFile::generateReferenceString(sdfCommon *child, bool import)
 {
     string childRef = "";
     if (child)
@@ -3930,7 +3951,7 @@ std::string sdfFile::generateReferenceString(sdfCommon *child)
             cerr << "sdfFile::generateReferenceString: " + child->getName()
             + " references file but could not be found in file" << endl;
     }
-    if (this->getNamespace()
+    if (import && this->getNamespace()
             && this->getNamespace()->getDefaultNamespace() != "")
         return this->getNamespace()->getDefaultNamespace() + ":" + childRef;
 
@@ -4160,20 +4181,30 @@ sdfCommon* sdfProperty::getParent() const
     return this->sdfObjectElement::getParent();
 }
 
-std::string sdfCommon::generateReferenceString()
+std::string sdfCommon::generateReferenceString(bool import)
 {
     if (this->getParent())
     {
         //cout << this->getParent()->generateReferenceString(this) << endl;
-        return this->getParent()->generateReferenceString(this);
+        return this->getParent()->generateReferenceString(this, import);
     }
     else if (this->getParentFile())
     {
         //cout << this->getParentFile()->generateReferenceString(this) << endl;
-        return this->getParentFile()->generateReferenceString(this);
+        return this->getParentFile()->generateReferenceString(this, import);
     }
 
     cerr << "sdfCommon::generateReferenceString: " + this->getName()
             + " has no assigned parent object" << endl;
     return "";
+}
+
+sdfData* sdfCommon::getThisAsSdfData()
+{
+    return NULL;
+}
+
+sdfData* sdfData::getThisAsSdfData()
+{
+    return this;
 }
