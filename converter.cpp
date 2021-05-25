@@ -635,8 +635,9 @@ sdfData* typeToSdfData(struct lys_type *type, sdfData *data,
     }
     else if (strcmp(type->der->name, "empty") == 0)
     {
-        data->setSimpType(json_boolean);
-        data->setConstantBool(true); // TODO: translate like this?
+//        data->setSimpType(json_boolean);
+//        data->setConstantBool(true);
+        data->setSimpType(json_object);
         data->setDescription(data->getDescription()
                 + "\n!Conversion note: type empty");
     }
@@ -1742,8 +1743,8 @@ sdfObject* moduleToSdfObject(const struct lys_module *module)
                 string(module->imp[i].module->name)) == alreadyImported.end())
         {
             sdfObject *importObject = moduleToSdfObject(module->imp[i].module);
-            importObject->objectToFile(avoidNull(module->imp[i].module->name)
-                    + ".sdf.json");
+            importObject->objectToFile(outputDirString
+                    + avoidNull(module->imp[i].module->name) + ".sdf.json");
             alreadyImported.push_back(avoidNull(module->imp[i].module->name));
         }
     }
@@ -2942,7 +2943,8 @@ struct lys_tpdf* sdfDataToTypedef(sdfData *data, lys_tpdf *tpdf,
     tpdf->ext_size = 0;
     tpdf->module = &module;
     if (data->getUnits() != "")
-        tpdf->units = data->getUnitsAsArray();
+        tpdf->units = storeString(data->getUnits());
+//        tpdf->units = data->getUnitsAsArray();
 
     // type
     tpdf->type.parent = tpdf;
@@ -3048,7 +3050,8 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module,
         fillLysType(data->getItemConstr(), leaflist->type);
 
         if (data->getUnits() != "")
-            leaflist->units = data->getUnitsAsArray();
+            leaflist->units = storeString(data->getUnits());
+                              //data->getUnitsAsArray();
         //leaflist->dflt = (const char**)data->getDefaultAsCharArray();
 
         leaflist->min = data->getMinItems();
@@ -3087,7 +3090,8 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module,
         fillLysType(data, leaf->type); // TODO: const?
 
         if (data->getUnits() != "")
-            leaf->units = data->getUnitsAsArray();
+            leaf->units = storeString(data->getUnits());
+                          //data->getUnitsAsArray();
         leaf->dflt = storeString(data->getDefaultAsString());
 
         node = storeNode((shared_ptr<lys_node>&)leaf);
@@ -3263,11 +3267,11 @@ void convertInfoBlock(sdfInfoBlock *info, lys_module &module)
         return;
     // TITLE has to be altered
     string title = info->getTitle();
+    // Spaces are replaced by '-'
+    replace(title.begin(), title.end(), ' ', '-');
     // All special characters (like '(') have to be removed from the title
     title.resize(remove_if(title.begin(), title.end(),
             [](char x){return !isalnum(x) && x!='-';})-title.begin());
-    // Spaces are replaced by '-'
-    replace(title.begin(), title.end(), ' ', '-');
     // All characters in the title have to be lower case
     for (int i = 0; i < title.length(); i++)
         title[i] = tolower(title[i]);

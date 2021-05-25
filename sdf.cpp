@@ -1019,7 +1019,7 @@ string sdfData::getType()
             cerr << "sdfData::getType: reference is of wrong type" << endl;
     }
 
-    if (this->simpleType == json_type_undef)
+    if (this->simpleType != json_type_undef)
         return jsonDTypeToString(simpleType);
 
     return this->derType;
@@ -1055,7 +1055,27 @@ bool sdfData::getUniqueItems()
 
 string sdfData::getUnits()
 {
-    return units;
+    if (units != "")
+        return units;
+
+    else if (subtype == sdf_byte_string)
+        return "byte-string";
+    else if (subtype == sdf_unix_time)
+        return "unix-time";
+    else if (format == json_date_time)
+        return "date-time";
+    else if (format == json_date)
+        return "date";
+    else if (format == json_time)
+        return "time";
+    else if (format == json_uri)
+        return "uri";
+    else if (format == json_uri_reference)
+        return "uri-reference";
+    else if (format == json_uuid)
+        return "uuid";
+
+    return "";
 }
 
 //bool sdfData::hasChild(sdfCommon *child) const
@@ -1158,7 +1178,7 @@ json sdfData::dataToJson(json prefix)
     json data;
     data = this->commonToJson(data);
 
-    if (this->getUnits() != "")
+    if (units != "")
         data["unit"] = this->getUnits();
     if (this->getSubtype() == sdf_byte_string)
         data["sdfType"] = "byte-string";
@@ -1284,38 +1304,12 @@ json sdfData::dataToJson(json prefix)
         data["properties"][i->getName()]
                  = i->dataToJson(tmpJson)["sdfData"][i->getName()];
     }
+    json tmpJson({});
+    if (simpleType == json_object && objectProperties.empty())
+        data["properties"] = tmpJson;
+
     if (!requiredObjectProperties.empty())
         data["required"] = requiredObjectProperties;
-/*
-    switch (simpleType) // TODO: just print the derType?
-    {
-    //case json_type_undef:
-        //if (derType != "")
-        //    data["type"] = derType;
-    //    break;
-    case json_number:
-        data["type"] = "number";
-        break;
-    case json_string:
-        data["type"] = "string";
-        break;
-    case json_boolean:
-        data["type"] = "boolean";
-        break;
-    case json_integer:
-        data["type"] = "integer";
-        if (!isnan(this->getMinimum()))
-            data["minimum"] = (int)this->getMinimum();
-        if (!isnan(this->getMaximum()))
-            data["maximum"] = (int)this->getMaximum();
-        break;
-    case json_array:
-        data["type"] = "array";
-        break;
-    case json_object:
-        data["type"] = "object";
-        break;
-    }*/
 
     if (simpleType != json_type_undef && !this->getReference())
         data["type"] = jsonDTypeToString(simpleType);//derType;
