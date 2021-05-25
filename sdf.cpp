@@ -134,15 +134,18 @@ sdfCommon* refToCommon(string ref, std::string nsPrefix)
     if (existingDefinitonsGlobal[ref])
         return existingDefinitonsGlobal[ref];
 
+    else if (existingDefinitonsGlobal[refAlter])
+        return existingDefinitonsGlobal[refAlter];
+
     else if (existingDefinitons[ref])
         return existingDefinitons[ref];
 
     else if (existingDefinitons[refAlter])
         return existingDefinitons[ref];
 
-    else
-        cerr << "refToCommon(): definition for reference "
-                + ref + " does not exist" << endl;
+//    else
+//        cerr << "refToCommon(): definition for reference "
+//                + ref + " not found (yet)" << endl;
 
     return NULL;
 }
@@ -2580,13 +2583,16 @@ void sdfNamespaceSection::makeDefinitionsGlobal()
         {
             if (regex_match(newRef, sm, hashSplit))
                 newRef = this->getDefaultNamespace() + ":" + string(sm[1]);
-            //cout << newRef << endl;
-            //cout << it->second->getName() << endl;
-            existingDefinitonsGlobal[newRef] = it->second;
+            if (it->second)
+            {
+//                cout << newRef << endl;
+//                cout << it->second->getName() << endl;
+                existingDefinitonsGlobal[newRef] = it->second;
+            }
         }
     }
-
-    existingDefinitons.clear();
+    //existingDefinitons.clear();
+    existingDefinitons = {};
 }
 
 sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
@@ -2693,11 +2699,13 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
             cerr << "There is/are "
             + to_string(unassignedRefs.size()+unassignedReqs.size())
             + " reference(s) left unassigned" << endl;
+        else
+            cout << "All references resolved" << endl;
 
         if (isContext)
         {
-            unassignedRefs = {};
-            unassignedReqs = {};
+//            unassignedRefs = {};
+//            unassignedReqs = {};
 
             if (this->getNamespace())
                 this->getNamespace()->makeDefinitionsGlobal();
@@ -2835,11 +2843,13 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
             cerr << "There is/are "
             + to_string(unassignedRefs.size()+unassignedReqs.size())
             + " reference(s) left unassigned" << endl;
+        else
+            cout << "All references resolved" << endl;
 
         if (isContext)
         {
-            unassignedRefs = {};
-            unassignedReqs = {};
+//            unassignedRefs = {};
+//            unassignedReqs = {};
 
             if (this->getNamespace())
                 this->getNamespace()->makeDefinitionsGlobal();
@@ -3676,14 +3686,14 @@ string sdfData::getDefaultAsString()
     string defStr;
     if (simpleType == json_number || !isnan(defaultNumber))
     {
-        defStr = string(to_string(defaultNumber));
+        defStr = to_string(defaultNumber);
     }
     else if (simpleType == json_string || defaultString != "")
     {
         defStr = defaultString;
     }
 
-    else if (simpleType == json_integer || defaultBoolDefined)
+    else if (simpleType == json_boolean || defaultBoolDefined)
     {
         if (defaultBool == true)
             defStr = "true";
@@ -4116,11 +4126,13 @@ sdfFile* sdfFile::fromJson(nlohmann::json input)
         cerr << "There is/are "
         + to_string(unassignedRefs.size()+unassignedReqs.size())
         + " reference(s) left unassigned" << endl;
+    else
+        cout << "All references resolved" << endl;
 
     if (isContext)
     {
-        unassignedRefs = {};
-        unassignedReqs = {};
+//        unassignedRefs = {};
+//        unassignedReqs = {};
 
         if (this->getNamespace())
             this->getNamespace()->makeDefinitionsGlobal();

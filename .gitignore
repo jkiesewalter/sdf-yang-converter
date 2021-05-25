@@ -5,6 +5,7 @@ playground/
 yang/
 cddl_validator/
 json-schema-validator/
+testdir/
 *.o
 *.sdf.json
 *.yang
