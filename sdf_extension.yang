@@ -1,6 +1,6 @@
 module sdf_extension {
   yang-version 1.1;
-  namespace "";
+  namespace "urn:ietf:params:xml:ns:yang:sdf_extension";
   prefix helper;
 
   organization

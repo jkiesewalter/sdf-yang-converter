@@ -175,7 +175,6 @@ private:
     // map of namespace prefixes/short names to namespace URIs
     std::map<std::string, std::string> namespaces;
     std::string default_ns;
-    //std::string ctxPath; TODO: define a context like in YANG?
 };
 
 class sdfData : virtual public sdfCommon
@@ -229,31 +228,6 @@ public:
                       float _maxItems = NAN,
                       bool _uniqueItems = NAN,
                       sdfData *_itemConstr = NULL);
-    /*void setArrayData(std::vector<std::string> enm,
-                      float _minItems = NAN,
-                      float _maxItems = NAN,
-                      bool _uniqueItems = NAN,
-                         std::string item_type = "string",
-                      sdfCommon *ref = NULL,
-                      float minLength = NAN,
-                      float maxLength = NAN,
-                      jsonSchemaFormat format = json_format_undef);
-    void setArrayData(std::vector<float> enm,
-                      float _minItems = NAN,
-                      float _maxItems = NAN,
-                      bool _uniqueItems = NAN,
-                      std::string item_type = "number",
-                      sdfCommon *ref = NULL,
-                      float min = NAN,
-                      float max = NAN);
-    void setArrayData(std::vector<int> enm,
-                      float _minItems = NAN,
-                      float _maxItems = NAN,
-                      bool _uniqueItems = NAN,
-                      std::string item_type = "integer",
-                      sdfCommon *ref = NULL,
-                      float min = NAN,
-                      float max = NAN);*/
     // other setters
     void setSimpType(jsonDataType _type);
     void setType(std::string _type);
@@ -404,7 +378,6 @@ private:
     std::string constantString;
     std::string defaultString;
     // only fill for type boolean
-    //std::vector<bool> enumBool; // TODO: does this even make sense?
     bool constantBool;
     bool defaultBool;
     bool constBoolDefined;
@@ -416,7 +389,6 @@ private:
     bool constIntDefined;
     bool defaultIntDefined;
     // only fill for type array
-    // TODO: find a way to represent not only string arrays as const/default
     std::vector<bool> constantBoolArray;
     std::vector<bool> defaultBoolArray;
     std::vector<int> constantIntArray;
@@ -637,7 +609,6 @@ public:
             bool print_info_namespace = false);
     std::string thingToString(bool print_info_namespace = true);
     void thingToFile(std::string path);
-    // TODO: jsonToThing return void?
     sdfThing* jsonToThing(nlohmann::json input, bool nested = false);
     sdfThing* jsonToNestedThing(nlohmann::json input);
     sdfThing* fileToThing(std::string path);

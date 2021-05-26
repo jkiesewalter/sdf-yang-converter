@@ -1184,7 +1184,6 @@ json sdfData::dataToJson(json prefix)
         data["sdfType"] = "byte-string";
     else if (this->getSubtype() == sdf_unix_time)
             data["sdfType"] = "unix-time";
-    // TODO: what exactly is the content format??
     if (this->getContentFormat() != "")
         data["contentFormat"] = this->getContentFormat();
     if (this->readableDefined)
@@ -1199,8 +1198,6 @@ json sdfData::dataToJson(json prefix)
     {
         for (sdfData *i : sdfChoice)
         {
-            // TODO: this is only done because of the validation schema of SDF
-            // change back if schema gets changed
             if (i->getSimpType() == json_type_undef)
                 i->setType(simpleType);
 
@@ -1208,7 +1205,6 @@ json sdfData::dataToJson(json prefix)
             data["sdfChoice"][i->getName()]
                             = i->dataToJson(tmpJson)["sdfData"][i->getName()];
         }
-        // TODO: see last comment (faulty validator)
         this->setType(json_type_undef);
     }
 
@@ -1452,8 +1448,6 @@ json sdfEvent::eventToJson(json prefix)
         prefix["sdfEvent"][this->getName()]
                      = i->dataToJson(prefix["sdfEvent"][this->getName()]);
     }
-    // TODO: change according to new SDF version (sdfOutputData is not a
-    // pointer-list anymore)
     if (outputData != NULL)
     {
         json tmp;
@@ -1646,18 +1640,6 @@ json sdfAction::actionToJson(json prefix)
         prefix["sdfAction"][this->getName()]["sdfInputData"]
                  = inputData->dataToJson(tmp)["sdfData"][inputData->getName()];
     }
-    // TODO: obsolete?
-    /*
-    for (sdfData *i : this->getRequiredInputData())
-    {
-        prefix["sdfAction"][this->getLabel()]["sdfRequiredInputData"][i->getLabel()]["sdfRef"]
-                             = i->generateReferenceString();
-    }
-    for (sdfData *i : this->getOutputData())
-    {
-        prefix["sdfAction"][this->getLabel()]["sdfOutputData"][i->getLabel()]["sdfRef"]
-                     = i->generateReferenceString();
-    }*/
     if (outputData != NULL)
     {
         json tmp;
@@ -2682,7 +2664,6 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
     }
 
     // only try to assign refs when this is a top level object
-    // TODO: if there was a 'top level structure' do that there
     if (!this->getParentThing() && !this->getParentFile())
     {
         // assign sdfRef and sdfRequired references
@@ -2707,7 +2688,7 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
     }
     // jsonToCommon needs to be called twice because of sdfRequired
     // (which cannot be filled before the rest of the object)
-    // TODO: does it really (changed way of assigning sdfRef)?
+    // not anymore (changed way of assigning sdfRef)
     //this->jsonToCommon(input);
     return this;
 }
@@ -2743,7 +2724,10 @@ sdfObject* sdfObject::fileToObject(string path, bool testForThing)
         input.close();
     }
     else
+    {
         cerr << "Error opening file" << endl;
+        return NULL;
+    }
     return this->jsonToObject(json_input, testForThing);
 }
 
@@ -2808,10 +2792,6 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
                     this->addThing(childThing);
                     childThing->jsonToThing(input["sdfThing"][jt.key()], true);
                 }
-
-                // TODO: what if there is more than one sdfThing on the highest
-                // level / more than one sdfObject
-                // -> create a structure, e.g. *file*, that holds them???
             }
         }
         else if (it.key() == "sdfObject" && !it.value().empty())
@@ -2866,7 +2846,10 @@ sdfThing* sdfThing::fileToThing(string path)
         input.close();
     }
     else
+    {
         cerr << "Error opening file" << endl;
+        return NULL;
+    }
     return this->jsonToThing(json_input);
 }
 /*
@@ -2905,9 +2888,7 @@ void sdfData::setType(jsonDataType _type)
 
 void sdfData::setType(string _type)
 {
-    //if (stringToJsonDType(_type) == json_type_undef)
     this->derType = _type;
-    //TODO: else?
     this->simpleType = stringToJsonDType(_type);
 }
 
@@ -3384,7 +3365,6 @@ void sdfData::setObjectProperties(std::vector<sdfData*> properties)
 
 std::string sdfCommon::getName() const
 {
-    // TODO: do this?
     if (name == "")
         return label;
     return name;
@@ -4148,7 +4128,10 @@ sdfFile* sdfFile::fromFile(std::string path)
         input.close();
     }
     else
+    {
         cerr << "Error opening file" << endl;
+        return NULL;
+    }
     return this->fromJson(json_input);
 }
 

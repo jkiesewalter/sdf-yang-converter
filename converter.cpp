@@ -366,18 +366,13 @@ jsonDataType parseBaseType(LY_DATA_TYPE type)
             || type == LY_TYPE_INT64
             || type == LY_TYPE_UINT64)
         return json_integer;
-    // TODO: will all enums be translated to type string?
     else if (type == LY_TYPE_STRING || type == LY_TYPE_ENUM)
         return json_string;
     else
     {
         // error handling?
-        //cerr << "The base type " << type << " could not be resolved" << endl;
         return json_type_undef;
     }
-
-    // TODO: what about LY_TYPE_BINARY, LY_TYPE_BITS, LY_TYPE_EMPTY,
-    // LY_TYPE_IDENT, LY_TYPE_INST, LY_TYPE_LEAFREF, LY_TYPE_UNKNOWN?
 }
 
 LY_DATA_TYPE stringToLType(std::string type)
@@ -408,26 +403,6 @@ LY_DATA_TYPE stringToLType(jsonDataType type)
         return LY_TYPE_UNKNOWN;
 }
 
-// TODO: union?
-/*
- * Translate the types of a union into a vector
- */
-/*
-vector<jsonDataType> parseType(struct lys_type *type)
-//jsonDataType parseType(struct lys_type *type)
-{
-    if (type->base == LY_TYPE_UNION)
-    {
-        vector<jsonDataType> result;
-        for (int i = 0; i < type->info.uni.count; i++)
-            result.push_back(parseBaseType(type->info.uni.types[i].base));
-        return result;
-    }
-    else
-        return {parseBaseType(type->base)};
-}
-*/
-
 /*
  * Extract the type from a given lys_type struct as string
  */
@@ -446,19 +421,16 @@ string parseTypeToString(struct lys_type *type)
             || type->base == LY_TYPE_INT64
             || type->base == LY_TYPE_UINT64)
         return "integer";
-    // TODO: will all enums be translated to type string?
     else if (type->base == LY_TYPE_STRING || type->base == LY_TYPE_ENUM)
         return "string";
     else
     {
         // error handling?
-        //cerr << "The type " << type->der->name << " could not be resolved"
-        //<< endl;
         return "";
     }
 
     // TODO: what about LY_TYPE_BINARY, LY_TYPE_BITS, LY_TYPE_EMPTY,
-    // LY_TYPE_INST, LY_TYPE_LEAFREF, LY_TYPE_UNKNOWN?
+    // LY_TYPE_INST? translate in this function?
 }
 
 /*
@@ -643,10 +615,10 @@ sdfData* typeToSdfData(struct lys_type *type, sdfData *data,
     }
     else if (strcmp(type->der->name, "bits") == 0)
     {
+        data->setSimpType(json_object);
         sdfData *bitProp;
         for (int i = 0; i < type->info.bits.count; i++)
         {
-            data->setSimpType(json_object);
             bitProp = new sdfData();
             bitProp->setName(avoidNull(type->info.bits.bit[i].name));
             string dsc = "Bit at positition "
@@ -856,16 +828,15 @@ sdfData* typeToSdfData(struct lys_type *type, sdfData *data,
             // TODO: Test
         }
 
-        // TODO: enums in yang can only be translated to string type
         if (type->base == LY_TYPE_ENUM)
         {
             vector<string> enum_names = {};
             for (int i = 0; i < type->info.enums.count; i++)
             {
-                enum_names.push_back(type->info.enums.enm[i].name);
+                enum_names.push_back(avoidNull(type->info.enums.enm[i].name));
                 data->setDescription(data->getDescription() + "\n"
-                        + type->info.enums.enm[i].name + ": "
-                        + type->info.enums.enm[i].dsc);
+                        + avoidNull(type->info.enums.enm[i].name) + ": "
+                        + avoidNull(type->info.enums.enm[i].dsc));
             }
             data->setEnumString(enum_names);
         }
@@ -1018,7 +989,7 @@ sdfProperty* leafToSdfProperty(struct lys_node_leaf *node,
     //{
     typeToSdfData(&node->type, property);
     // save reference to leaf for ability to convert leafref-type
-    if (node->type.base != LY_TYPE_LEAFREF) // TODO: keep this condition?
+    if (node->type.base != LY_TYPE_LEAFREF)
         leafs[generatePath((lys_node*)node)] = property;
     //}
 
@@ -1062,7 +1033,6 @@ sdfData* leafToSdfData(struct lys_node_leaf *node,
             referencesLeft.push_back(tuple<string, string, sdfCommon*>{
                expandPath(node), expandPath(node, true), (sdfCommon*)data});
         }
-        //cout<<"Leafref added "<<expandPath(node)<< endl;
     }
     // find what leafToSdfProperty returns in typerefs and overwrite with data
     else
@@ -1080,11 +1050,9 @@ sdfData* leafToSdfData(struct lys_node_leaf *node,
                 avoidNull(node->module->prefix) + ":"
                     + avoidNull(node->type.der->name),
                 data});
-            //cout <<"Typeref added "<< data->getName() << endl;
         }
 
         leafs[generatePath((lys_node*)node)] = data;
-        //cout<<"Leaf added "<<generatePath((lys_node*)node)<<endl;
     }
     assert(!dynamic_cast<sdfProperty*>(data));
     return data;
@@ -1131,7 +1099,6 @@ sdfProperty* leaflistToSdfProperty(struct lys_node_leaflist *node,
             expandPath(node), (sdfCommon*)itemConstr});
     */
     // overwrite reference for path
-    // TODO: is this necessary? also happens in leafToSdfData
     if (node->type.base != LY_TYPE_LEAFREF)
         leafs[generatePath((lys_node*)node)] = property;
 
@@ -1316,6 +1283,17 @@ sdfAction* actionToSdfAction(lys_node_rpc_action *node, sdfObject *object,
     return action;
 }
 
+string sdfSpecExtToString(lys_ext_instance **ext, int ext_size)
+{
+    // read out the original sdf spec from the extension if there is one
+    for (int i = 0; i < ext_size; i++)
+    {
+        if (avoidNull(ext[i]->def->name) == "sdf-spec")
+            return avoidNull(ext[i]->arg_value);
+    }
+    return "";
+}
+
 sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
 {
     if (!node)
@@ -1341,6 +1319,8 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
 
     // TODO: if feature
     for (int i = 0; i < node->iffeature_size; i++);
+
+    string origin = sdfSpecExtToString(node->ext, node->ext_size);
 
     // translate the when-statement (if applicable)
     lys_node_container *c = (lys_node_container*)node;
@@ -1612,7 +1592,6 @@ vector<tuple<string, string, sdfCommon*>> assignReferences(
         vector<tuple<string, string, sdfCommon*>> refsLeft,
         map<string, sdfCommon*> refs)
 {
-    // TODO: use assignRefs from sdf.cpp instead??
     // check for references left unassigned
     string str, strWRef;
     sdfCommon *com;
@@ -1715,8 +1694,10 @@ sdfObject* moduleToSdfObject(const struct lys_module *module)
     }
 
     // Add identities and typedefs of the submodule to the sdfObject
-    // TODO: what about the other members of submodule and further levels of
+    // What about the other members of submodule and further levels of
     // submodules?
+    // I think the nodes of submodules are already added to the module
+    // by libyang automatically
     for (int i = 0; i < module->inc_size; i++)
     {
         for (int j = 0; j < module->inc[i].submodule->tpdf_size; j++)
@@ -1757,10 +1738,18 @@ sdfObject* moduleToSdfObject(const struct lys_module *module)
       //  return object;
 
     // iterate over all child nodes of the module
+    string origin;
     struct lys_node *start = module->data;
     struct lys_node *elem;
     LY_TREE_FOR(start, elem)
     {
+        // read out the original sdf spec from the extension if there is one
+        for (int i = 0; i < elem->ext_size; i++)
+        {
+            if (avoidNull(elem->ext[i]->def->name) == "sdf-spec")
+                origin = avoidNull(elem->ext[i]->arg_value);
+        }
+
         // check node type (container, grouping, leaf, etc.)
         if (elem->nodetype == LYS_CHOICE)
         {
@@ -1986,7 +1975,6 @@ sdfThing* moduleToSdfThing(const struct lys_module *module)
     if (module->inc_size == 0)
         return NULL;
 
-    // TODO: choose name and dsc of thing
     sdfThing *thing = new sdfThing(avoidNull(module->name),
             avoidNull(module->dsc));
 
@@ -2032,7 +2020,6 @@ sdfThing* submoduleToSdfThing(struct lys_submodule *submodule)
 // TODO: translate YANG config to SDF somehow (e.g. extra (sdf)property?)
 // TODO: if defaults/const/range values cannot be translated from SDF, use
 // XPath expressions?
-// TODO: YANG union to sdfChoice over type! What about bits, binary?
 
 lys_ext_instance** argToSdfSpecExtension(string arg)
 {
@@ -2103,7 +2090,7 @@ bool setMandatory(lys_node *node, bool firstLevel = true)
     if (!node)
         return false;
 
-    // TODO: go further until ALL child nodes are mandatory?
+    // Go further until ALL child nodes are mandatory? no
 
     // leaf/choice nodes can be assigned the mandatory flag directly
     if (node->nodetype & (LYS_LEAF | LYS_CHOICE))
@@ -2150,6 +2137,8 @@ void fillLysType(sdfData *data, struct lys_type &type)
     if (!data)
     {
         cerr << "fillLysType: sdfData element must not be NULL" << endl;
+        type.base = LY_TYPE_EMPTY;
+        type.der = &emptyTpdf;
         return;
     }
     type.base = stringToLType(data->getSimpType());
@@ -2187,7 +2176,12 @@ void fillLysType(sdfData *data, struct lys_type &type)
                 || !data->getConstantIntArray().empty()
                 || !data->getConstantStringArray().empty()
                 || !data->getConstantNumberArray().empty())
+        {
             type.base = stringToLType(json_array);
+            shared_ptr<lys_tpdf> der(new lys_tpdf());
+            voidPointerStore.push_back((shared_ptr<void>)der);
+            type.der = der.get();
+        }
 
         else if (!data->getRequiredObjectProperties().empty()
                 || !data->getObjectProperties().empty())
@@ -2195,7 +2189,6 @@ void fillLysType(sdfData *data, struct lys_type &type)
         else
         {
             type.base = LY_TYPE_EMPTY;
-            // TODO: put this back in when ready
             type.der = &emptyTpdf;
             // leave it out for now to not miss mistakes
 
@@ -2471,11 +2464,8 @@ lys_module* sdfFileToModule(sdfFile &file, lys_module &module);
 lys_node* sdfRefToNode(sdfCommon *com, lys_node *node, lys_module &module,
         bool nodeIsTpdf = false)
 {
-    //cout << node <<" "+avoidNull(node->name) <<endl;
     if (!com || !com->getReference())
         return NULL;
-    // TODO: investigate why some nodes do not have a module
-    // (and why that is not a problem?)
     if (!node)
     {
         cerr << "sdfRefToNode: node must not be NULL" << endl;
@@ -2714,8 +2704,8 @@ lys_node* sdfRefToNode(sdfCommon *com, lys_node *node, lys_module &module,
                     cerr << "sdfRefToNode: node " + avoidNull(node->name)
                     + " must have a module" << endl;
 
-                // TODO: augment for additional object properties? is that
-                // even possible?
+                // augment for additional object properties? is that
+                // even possible? no?
                 shared_ptr<lys_refine> refine(new lys_refine());
                 voidPointerStore.push_back((shared_ptr<void>)refine);
                 uses->refine = refine.get();
@@ -3007,7 +2997,7 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module,
         shared_ptr<lys_node_list> list =
                 shared_ptr<lys_node_list>(new lys_node_list());
         list->nodetype = LYS_LIST;
-        // TODO: do this? this is only done because of the way
+        // do this? this is only done because of the way
         // sdfRefs to arrays with object items are translated into lists
         list->min = data->getMinItemsOfRef();
         list->max = data->getMaxItemsOfRef();
@@ -3257,8 +3247,8 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module,
         }
     }
 
-    // TODO: should the typedef always be on top-level so it can be reached
-    // from everywhere (scoping)?
+    // should the typedef always be on top-level so it can be reached
+    // from everywhere (scoping)? yes
 }
 
 void convertInfoBlock(sdfInfoBlock *info, lys_module &module)
@@ -3848,24 +3838,22 @@ int main(int argc, const char** argv)
                     "[-c path/to/yang/directory]";
     if (argc < 2)//5 with identifiers?
     {
-        cerr << "Missing arguments\n" + usage << endl; // TODO
+        cerr << "Missing arguments\n" + usage << endl;
         return -1;
     }
     // regexs to check file formats
     std::regex yang_regex (".*\\.yang");
     std::regex sdf_json_regex (".*\\.sdf\\.json");
 
-    // Try loading the context from this directory with the usual name
-    ly_ctx *ctx = ly_ctx_new("./yang", 0);
     const char *inputFileName = NULL;
     const char *outputFileName = NULL;
     const char *outputDir = NULL;
+    ly_ctx *ctx;
     for (int i = 0; i < argc; i++)
     {
         if (strcmp(argv[i], "-c") == 0)
         {
             // load the required context
-            ly_ctx_destroy(ctx, NULL);
             ctx = ly_ctx_new(argv[i+1], 0);
         }
 
@@ -3894,6 +3882,13 @@ int main(int argc, const char** argv)
         {
             ly_ctx_destroy(ctx, NULL);
             ctx = ly_ctx_new(".", 0);
+        }
+
+        if (!ctx)
+        {
+            // Try loading the context from this directory with the usual name
+            ly_ctx_destroy(ctx, NULL);
+            ctx = ly_ctx_new("./yang", 0);
         }
 
         if (!ctx)
@@ -3927,7 +3922,6 @@ int main(int argc, const char** argv)
     // check whether input file is a YANG file
     if (std::regex_match(inputFileName, yang_regex))
     {
-        // TODO: check whether output file has right format
         if (outputFileName && !std::regex_match(outputFileName, sdf_json_regex))
         {
             cerr << "Incorrect output file format\n" << endl << endl;
@@ -4040,7 +4034,6 @@ int main(int argc, const char** argv)
             cout << "-> succeeded" << endl << endl;
 
         cout << "Loading SDF file..." << endl;
-        validateFile(inputFileName);
         cout << endl;
 
         vector<tuple<sdfCommon*, lys_node*>> openRefs = {};
