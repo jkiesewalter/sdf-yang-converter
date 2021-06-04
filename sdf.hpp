@@ -167,6 +167,8 @@ public:
     std::string getDefaultNamespace();
     const char* getDefaultNamespaceAsArray();
     std::string getNamespaceString() const;
+    // setter
+    void addNamespace(std::string pre, std::string ns);
     // parsing
     nlohmann::json namespaceToJson(nlohmann::json prefix);
     sdfNamespaceSection* jsonToNamespace(nlohmann::json input);
@@ -238,6 +240,7 @@ public:
     void setObserveNull(bool _observable, bool _nullable);
     void setFormat(jsonSchemaFormat _format);
     void setSubtype(sdfSubtype _subtype);
+    void setUniqueItems(bool unique);
     void setMinimum(float min);
     void setMaximum(float max);
     void setMultipleOf(float mult);
@@ -413,7 +416,7 @@ private:
     float multipleOf;
     float minLength;
     float maxLength;
-    std::string pattern; // regex?
+    std::string pattern;
     jsonSchemaFormat format;
     float minItems;
     float maxItems;

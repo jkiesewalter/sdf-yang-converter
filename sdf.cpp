@@ -433,9 +433,8 @@ json sdfNamespaceSection::namespaceToJson(json prefix)
 {
     //cout << "ns to json" << endl;
     for (auto it : this->namespaces)
-    {
         prefix["namespace"][it.first] = it.second;
-    }
+
     if (this->default_ns != "")
         prefix["defaultNamespace"] = this->default_ns;
     return prefix;
@@ -1045,6 +1044,20 @@ jsonDataType sdfData::getSimpType()
         }
     }
 
+    // if all choices have the same type return that type
+    jsonDataType choiceType;
+    bool sameTypes = true;
+    for (int i = 0; i < sdfChoice.size() && sameTypes; i++)
+    {
+        if (i == 0)
+            choiceType = sdfChoice[0]->getSimpType();
+
+        else if (sdfChoice[i]->getSimpType() != choiceType)
+            sameTypes = false;
+    }
+    if (!sdfChoice.empty() && sameTypes)
+        return choiceType;
+
     return simpleType;
 }
 
@@ -1058,8 +1071,6 @@ string sdfData::getUnits()
     if (units != "")
         return units;
 
-    else if (subtype == sdf_byte_string)
-        return "byte-string";
     else if (subtype == sdf_unix_time)
         return "unix-time";
     else if (format == json_date_time)
@@ -3944,30 +3955,35 @@ std::string sdfFile::generateReferenceString(sdfCommon *child, bool import)
 
 nlohmann::json sdfFile::toJson(nlohmann::json prefix)
 {
-    // TODO
     // print info if specified by print_info
-    if (this->info != NULL)
-        prefix.push_back(this->info->infoToJson(prefix));
-    if (this->ns != NULL)
-        prefix.push_back(this->ns->namespaceToJson(prefix));
+    if (this->info)
+        prefix = this->info->infoToJson(prefix);
+    if (this->ns)
+        prefix = this->ns->namespaceToJson(prefix);
 
     for (sdfThing *i : things)
-        prefix.push_back(i->thingToJson(prefix, false));
+        prefix["sdfThing"][i->getName()] =
+                i->thingToJson({}, false)["sdfThing"][i->getName()];
 
     for (sdfObject *i : objects)
-        prefix.push_back(i->objectToJson(prefix, false));
+        prefix["sdfObject"][i->getName()] =
+                i->objectToJson({}, false)["sdfObject"][i->getName()];
 
     for (sdfData *i : datatypes)
-        prefix.push_back(i->dataToJson(prefix));
+        prefix["sdfData"][i->getName()] =
+                i->dataToJson({})["sdfData"][i->getName()];
 
     for (sdfProperty *i : properties)
-        prefix.push_back(i->propertyToJson(prefix));
+        prefix["sdfProperty"][i->getName()] =
+                i->propertyToJson({})["sdfProperty"][i->getName()];
 
     for (sdfAction *i : actions)
-        prefix.push_back(i->actionToJson(prefix));
+        prefix["sdfAction"][i->getName()] =
+                i->actionToJson({})["sdfAction"][i->getName()];
 
     for (sdfEvent *i : events)
-        prefix.push_back(i->eventToJson(prefix));
+        prefix["sdfEvent"][i->getName()] =
+                i->eventToJson({})["sdfEvent"][i->getName()];
 
     return prefix;
 }
@@ -4196,4 +4212,15 @@ sdfData* sdfCommon::getThisAsSdfData()
 sdfData* sdfData::getThisAsSdfData()
 {
     return this;
+}
+
+void sdfNamespaceSection::addNamespace(std::string pre, std::string ns)
+{
+    namespaces[pre] = ns;
+}
+
+void sdfData::setUniqueItems(bool unique)
+{
+    uniqueItems = unique;
+    uniqueItemsDefined = true;
 }
