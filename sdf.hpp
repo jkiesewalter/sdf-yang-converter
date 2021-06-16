@@ -89,6 +89,8 @@ public:
     sdfFile* getTopLevelFile();
     virtual sdfCommon* getParent() const = 0;
     //virtual bool hasChild(sdfCommon *child) const = 0;
+    std::string getDefaultNamespace();
+    std::map<std::string, std::string> getNamespaces();
     // setters
     void setName(std::string _name);
     void setLabel(std::string _label);
@@ -167,8 +169,11 @@ public:
     std::string getDefaultNamespace();
     const char* getDefaultNamespaceAsArray();
     std::string getNamespaceString() const;
-    // setter
+    std::map<std::string, sdfFile*> getNamedFiles() const;
+    // setters
+    void removeNamespace(std::string pre);
     void addNamespace(std::string pre, std::string ns);
+    void updateNamedFiles();
     // parsing
     nlohmann::json namespaceToJson(nlohmann::json prefix);
     sdfNamespaceSection* jsonToNamespace(nlohmann::json input);
@@ -177,6 +182,8 @@ private:
     // map of namespace prefixes/short names to namespace URIs
     std::map<std::string, std::string> namespaces;
     std::string default_ns;
+    // namedFiles maps (default) namespaces to files
+    std::map<std::string, sdfFile*> namedFiles;
 };
 
 class sdfData : virtual public sdfCommon
@@ -235,14 +242,21 @@ public:
     void setType(std::string _type);
     void setType(jsonDataType _type);
     void setDerType(std::string _type);
-    void setUnits(std::string _units, float _scaleMin = NAN, float _scaleMax = NAN);
+    void setUnits(std::string _units, float _scaleMin = NAN,
+            float _scaleMax = NAN);
     void setReadWrite(bool _readable, bool _writable);
+    void setReadable(bool _readable);
+    void setWritable(bool _writable);
     void setObserveNull(bool _observable, bool _nullable);
     void setFormat(jsonSchemaFormat _format);
     void setSubtype(sdfSubtype _subtype);
     void setUniqueItems(bool unique);
-    void setMinimum(float min);
-    void setMaximum(float max);
+    void setMinimum(double min);
+    void setMaximum(double max);
+    void setMinInt(int64_t min);
+    void setMaxInt(uint64_t max);
+    void eraseMinInt();
+    void eraseMaxInt();
     void setMultipleOf(float mult);
     void setMaxItems(float maxItems);
     void setMinItems(float minItems);
@@ -250,17 +264,17 @@ public:
     void setMaxLength(float max);
     void setPattern(std::string pattern);
     void setConstantBool(bool constantBool);
-    void setConstantInt(int constantInt);
+    void setConstantInt(int64_t constantInt);
     void setConstantNumber(float constantNumber);
     void setConstantString(std::string constantString);
     void setDefaultBool(bool defaultBool);
-    void setDefaultInt(int defaultInt);
+    void setDefaultInt(int64_t defaultInt);
     void setDefaultNumber(float defaultNumber);
     void setDefaultString(std::string defaultString);
     void setConstantArray(std::vector<bool> constantArray);
     void setDefaultArray(std::vector<bool> defaultArray);
-    void setConstantArray(std::vector<int> constantArray);
-    void setDefaultArray(std::vector<int> defaultArray);
+    void setConstantArray(std::vector<int64_t> constantArray);
+    void setDefaultArray(std::vector<int64_t> defaultArray);
     void setConstantArray(std::vector<float> constantArray);
     void setDefaultArray(std::vector<float> defaultArray);
     void setConstantArray(std::vector<std::string> constantArray);
@@ -288,7 +302,7 @@ public:
     bool getNullableDefined() const;
     bool getObservableDefined() const;
     bool getConstantBool();
-    int getConstantInt();
+    int64_t getConstantInt();
     float getConstantNumber();
     std::string getConstantString();
     sdfData* getConstantObject() const;
@@ -296,7 +310,7 @@ public:
     //const char * getConstantAsCharArray();
     std::string getContentFormat();
     bool getDefaultBool();
-    int getDefaultInt();
+    int64_t getDefaultInt();
     float getDefaultNumber();
     std::string getDefaultString();
     sdfData* getDefaultObject() const;
@@ -326,6 +340,10 @@ public:
     float getMinItems();
     float getMinItemsOfRef();
     float getMinLength();
+    int64_t getMinInt() const;
+    uint64_t getMaxInt() const;
+    bool getMinIntSet() const;
+    bool getMaxIntSet() const;
     float getMultipleOf();
     std::string getPattern();
     float getScaleMaximum();
@@ -339,8 +357,8 @@ public:
     const char* getUnitsAsArray() const;
     std::vector<bool> getConstantBoolArray() const;
     std::vector<bool> getDefaultBoolArray() const;
-    std::vector<int> getConstantIntArray() const;
-    std::vector<int> getDefaultIntArray() const;
+    std::vector<int64_t> getConstantIntArray() const;
+    std::vector<int64_t> getDefaultIntArray() const;
     std::vector<float> getConstantNumberArray() const;
     std::vector<float> getDefaultNumberArray() const;
     std::vector<std::string> getConstantStringArray() const;
@@ -387,15 +405,15 @@ private:
     bool defaultBoolDefined;
     // only fill for type integer
     //std::vector<int> enumInt;
-    int constantInt;
-    int defaultInt;
+    int64_t constantInt;
+    int64_t defaultInt;
     bool constIntDefined;
     bool defaultIntDefined;
     // only fill for type array
     std::vector<bool> constantBoolArray;
     std::vector<bool> defaultBoolArray;
-    std::vector<int> constantIntArray;
-    std::vector<int> defaultIntArray;
+    std::vector<int64_t> constantIntArray;
+    std::vector<int64_t> defaultIntArray;
     std::vector<float> constantNumberArray;
     std::vector<float> defaultNumberArray;
     std::vector<std::string> constantStringArray;
@@ -407,8 +425,12 @@ private:
     std::vector<auto> defaultArray;*/
     //const char *constantAsCharArray;
     //const char *defaultAsCharArray;
-    float minimum;
-    float maximum;
+    double minimum;
+    double maximum;
+    int64_t minInt;
+    uint64_t maxInt;
+    bool minIntSet;
+    bool maxIntSet;
     float exclusiveMinimum_number; // TODO: number > exclusiveMin vs >=
     float exclusiveMaximum_number;
     bool exclusiveMinimum_bool;

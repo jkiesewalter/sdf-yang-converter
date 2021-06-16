@@ -10,6 +10,7 @@ map<string, sdfCommon*> existingDefinitons;
 map<string, sdfCommon*> existingDefinitonsGlobal;
 vector<tuple<string, sdfCommon*>> unassignedRefs;
 vector<tuple<string, sdfCommon*>> unassignedReqs;
+map<string, sdfFile*> prefixToFile;
 
 bool contextLoaded = false;
 bool isContext = true;
@@ -89,16 +90,24 @@ void loadContext(const char *path = ".")
         }
         closedir (dir);
 
+        string prefix = "";
         static shared_ptr<sdfFile[]> files(new sdfFile[names.size()]());
         for (int i = 0; i < names.size(); i++)
         {
             cout << "...found: " + names[i] << endl;
             files[i].fromFile(names[i]);
+            prefix = files[i].getNamespace()->getDefaultNamespace();
+            if (prefix != "")
+                prefixToFile[prefix] = &files[i];
         }
         if (names.size() == 0)
             cout <<  "...no files found" << endl;
 
         cout << "-> finished" << endl << endl;
+
+        // update named files in namespaces after all files are loaded
+        for (int i = 0; i < names.size(); i++)
+            files[i].getNamespace()->updateNamedFiles();
     }
     else
     {
@@ -106,7 +115,6 @@ void loadContext(const char *path = ".")
         cerr << "-> failed: ";
         perror ("");
     }
-
 
     isContext = false;
 }
@@ -217,8 +225,11 @@ sdfCommon::~sdfCommon()
     // items in required cannot be deleted because they are deleted somewhere
     // else as sdfData pointers already which are somehow not affected by the
     // i = NULL command and then cause a segfault
-    for (sdfCommon *i : required)
-        i = NULL;
+    for (int i = 0; i < required.size(); i++)
+    {
+        //delete required[i];
+        required[i] = NULL;
+    }
     required.clear();
 
     // reference cannot be deleted, see above explanation
@@ -400,12 +411,21 @@ sdfNamespaceSection::sdfNamespaceSection()
 {
     namespaces = map<string, string>();
     default_ns = "";
+    namedFiles = map<string, sdfFile*>();
 }
 
 sdfNamespaceSection::sdfNamespaceSection(map<string, string> _namespaces,
         string _default_ns)
             : namespaces(_namespaces), default_ns(_default_ns)
-{}
+{
+    // link files no foreign namespaces
+    map<string, string>::iterator it;
+    for (it = namespaces.begin(); it != namespaces.end(); it++)
+        namedFiles[it->first] = prefixToFile[it->first];
+
+    if (!default_ns.empty())
+        namedFiles[default_ns] = NULL;
+}
 
 
 map<string, string> sdfNamespaceSection::getNamespaces()
@@ -496,6 +516,10 @@ sdfData::sdfData(string _name, string _description, string _type,
     maxLength = NAN;
     minimum = NAN;
     maximum = NAN;
+    minInt = 0;
+    maxInt = 0;
+    minIntSet = false;
+    maxIntSet = false;
     multipleOf = NAN;
     exclusiveMinimum_number = NAN;
     exclusiveMaximum_number = NAN;
@@ -567,6 +591,10 @@ sdfData::sdfData(sdfData &data)
     maxLength = data.getMaxLength();
     minimum = data.getMinimum();
     maximum = data.getMaximum();
+    minInt = data.getMinInt();
+    maxInt = data.getMaxInt();
+    minIntSet = data.getMinIntSet();
+    maxIntSet = data.getMaxIntSet();
     multipleOf = data.getMultipleOf();
     exclusiveMinimum_number = data.getExclusiveMinimumNumber();
     exclusiveMaximum_number = data.getExclusiveMaximumNumber();
@@ -597,17 +625,17 @@ sdfData::sdfData(sdfProperty &prop)
 
 sdfData::~sdfData()
 {
-    for (sdfData *i : objectProperties)
+    for (int i = 0; i < objectProperties.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete objectProperties[i];
+        objectProperties[i] = NULL;
     }
     objectProperties.clear();
 
-    for (sdfData *i : sdfChoice)
+    for (int i = 0; i < sdfChoice.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete sdfChoice[i];
+        sdfChoice[i] = NULL;
     }
     sdfChoice.clear();
 
@@ -833,7 +861,7 @@ bool sdfData::getConstantBool()
     return constantBool;
 }
 
-int sdfData::getConstantInt()
+int64_t sdfData::getConstantInt()
 {
     return constantInt;
 }
@@ -858,7 +886,7 @@ bool sdfData::getDefaultBool()
     return defaultBool;
 }
 
-int sdfData::getDefaultInt()
+int64_t sdfData::getDefaultInt()
 {
     return defaultInt;
 }
@@ -1278,6 +1306,10 @@ json sdfData::dataToJson(json prefix)
         data["minimum"] = this->getMinimum();
     if (!isnan(this->getMaximum()))
         data["maximum"] = this->getMaximum();
+    if (minIntSet)
+        data["minimum"] = this->getMinInt();
+    if (maxIntSet)
+        data["maximum"] = this->getMaxInt();
     if (!isnan(this->getMultipleOf()))
         data["multipleOf"] = this->getMultipleOf();
     if (!this->getEnumString().empty())
@@ -1329,6 +1361,11 @@ json sdfData::dataToJson(json prefix)
             data["minimum"] = (int)this->getMinimum();
         if (!isnan(this->getMaximum()))
             data["maximum"] = (int)this->getMaximum();
+
+        if (minIntSet)
+            data["minimum"] = this->getMinInt();
+        if (maxIntSet)
+            data["maximum"] = this->getMaxInt();
     }
 
     prefix["sdfData"][this->getName()] = data;
@@ -1351,10 +1388,10 @@ sdfEvent::~sdfEvent()
     delete outputData;
     outputData = NULL;
 
-    for (sdfData *i : datatypes)
+    for (int i = 0; i < datatypes.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete datatypes[i];
+        datatypes[i] = NULL;
     }
     datatypes.clear();
 
@@ -1515,17 +1552,17 @@ sdfAction::~sdfAction()
     delete inputData;
     inputData = NULL;
 
-    for (sdfData *i : requiredInputData)
+    for (int i = 0; i < requiredInputData.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete requiredInputData[i];
+        requiredInputData[i] = NULL;
     }
     requiredInputData.clear();
 
-    for (sdfData *i : datatypes)
+    for (int i = 0; i < datatypes.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete datatypes[i];
+        datatypes[i] = NULL;
     }
     datatypes.clear();
 
@@ -1681,10 +1718,21 @@ sdfProperty::sdfProperty(sdfData &data)
 {
     this->setParentObject(NULL);
     this->setParentCommon(NULL);
-    for (sdfData *props : this->getObjectProperties())
-        props->setParentCommon(this);
-    for (sdfData *choice : this->getChoice())
-        choice->setParentCommon(this);
+    vector<sdfData*> d = this->getObjectProperties();
+    for (int i = 0; i < d.size(); i++)
+        d.at(i)->setParentCommon((sdfCommon*)this);
+
+    d = this->getChoice();
+    for (int i = 0; i < d.size(); i++)
+        d.at(i)->setParentCommon((sdfCommon*)this);
+
+    sdfData *ic = this->getItemConstr();
+    if (ic)
+    {
+        ic->setParentCommon((sdfCommon*)this);
+//        for (int i = 0; i < ic->getObjectProperties().size(); i++)
+//            ic->getObjectProperties().at(i)->setParentCommon((sdfCommon*)this);
+    }
 }
 
 //bool sdfProperty::hasChild(sdfCommon *child) const
@@ -1724,31 +1772,31 @@ sdfObject::sdfObject(string _name, string _description, sdfCommon *_reference,
 
 sdfObject::~sdfObject()
 {
-    for (sdfData *i : properties)
+    for (int i = 0; i < properties.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete properties[i];
+        properties[i] = NULL;
     }
     properties.clear();
 
-    for (sdfAction *i : actions)
+    for (int i = 0; i < actions.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete actions[i];
+        actions[i] = NULL;
     }
     actions.clear();
 
-    for (sdfEvent *i : events)
+    for (int i = 0; i < events.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete events[i];
+        events[i] = NULL;
     }
     events.clear();
 
-    for (sdfData *i : datatypes)
+    for (int i = 0; i < datatypes.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete datatypes[i];
+        datatypes[i] = NULL;
     }
     datatypes.clear();
 
@@ -1780,6 +1828,7 @@ void sdfObject::addProperty(sdfProperty *property)
 {
     this->properties.push_back(property);
     property->setParentObject(this);
+    property->setParentCommon((sdfCommon*)this);
 }
 
 void sdfObject::addAction(sdfAction *action)
@@ -1965,17 +2014,17 @@ sdfThing::sdfThing(string _name, string _description, sdfCommon *_reference,
 
 sdfThing::~sdfThing()
 {
-    for (sdfThing *i : childThings)
+    for (int i = 0; i < childThings.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete childThings[i];
+        childThings[i] = NULL;
     }
     childThings.clear();
 
-    for (sdfObject *i : childObjects)
+    for (int i = 0; i < childObjects.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete childObjects[i];
+        childObjects[i] = NULL;
     }
     childObjects.clear();
 
@@ -2316,7 +2365,9 @@ sdfData* sdfData::jsonToData(json input)
                     if (jt.value().is_number_integer()
                             && (simpleType == json_integer
                                     || simpleType == json_type_undef))
+                    {
                         this->defaultIntArray.push_back(jt.value());
+                    }
 
                     else if (jt.value().is_number())
                         this->defaultNumberArray.push_back(jt.value());
@@ -2331,11 +2382,25 @@ sdfData* sdfData::jsonToData(json input)
         }
         else if (it.key() == "minimum" && !it.value().empty())
         {
-            this->minimum = it.value();
+            if (it.value().is_number_integer()
+                    && (simpleType == json_integer
+                            || simpleType == json_type_undef))
+            {
+                this->setMinInt(it.value());
+            }
+            else
+                this->minimum = it.value();
         }
         else if (it.key() == "maximum" && !it.value().empty())
         {
-            this->maximum = it.value();
+            if (it.value().is_number_integer()
+                    && (simpleType == json_integer
+                            || simpleType == json_type_undef))
+            {
+                this->setMaxInt(it.value());
+            }
+            else
+                this->maximum = it.value();
         }
         else if (it.key() == "exclusiveMinimum" && !it.value().empty())
         {
@@ -2935,7 +3000,7 @@ void sdfData::setConstantBool(bool constantBool)
     this->constBoolDefined = true;
 }
 
-void sdfData::setConstantInt(int _constantInt)
+void sdfData::setConstantInt(int64_t _constantInt)
 {
     this->constantInt = _constantInt;
     this->constDefined = true;
@@ -2961,7 +3026,7 @@ void sdfData::setDefaultBool(bool defaultBool)
     this->defaultBoolDefined = true;
 }
 
-void sdfData::setDefaultInt(int defaultInt)
+void sdfData::setDefaultInt(int64_t defaultInt)
 {
     this->defaultInt = defaultInt;
     this->defaultDefined = true;
@@ -3045,11 +3110,17 @@ sdfNamespaceSection* sdfNamespaceSection::jsonToNamespace(json input)
             for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
             {
                 if (!jt.value().empty())
-                    this->namespaces[jt.key()] = jt.value();
+                {
+                    namespaces[jt.key()] = jt.value();
+                    namedFiles[jt.key()] = prefixToFile[jt.key()];
+                }
             }
         }
         else if (it.key() == "defaultNamespace" && !it.value().empty())
-            this->default_ns = it.value();
+        {
+            default_ns = it.value();
+            namedFiles[default_ns] = NULL;
+        }
     }
     return this;
 }
@@ -3255,13 +3326,13 @@ void sdfData::setDefaultArray(std::vector<bool> defaultArray)
     defaultDefined = true;
 }
 
-void sdfData::setConstantArray(std::vector<int> constantArray)
+void sdfData::setConstantArray(std::vector<int64_t> constantArray)
 {
     constantIntArray = constantArray;
     constDefined = true;
 }
 
-void sdfData::setDefaultArray(std::vector<int> defaultArray)
+void sdfData::setDefaultArray(std::vector<int64_t> defaultArray)
 {
     defaultIntArray = defaultArray;
     defaultDefined = true;
@@ -3289,12 +3360,12 @@ std::vector<bool> sdfData::getDefaultBoolArray() const
     return defaultBoolArray;
 }
 
-std::vector<int> sdfData::getConstantIntArray() const
+std::vector<int64_t> sdfData::getConstantIntArray() const
 {
     return constantIntArray;
 }
 
-std::vector<int> sdfData::getDefaultIntArray() const
+std::vector<int64_t> sdfData::getDefaultIntArray() const
 {
     return defaultIntArray;
 }
@@ -3370,8 +3441,8 @@ sdfData* sdfData::getDefaultObject() const
 void sdfData::setObjectProperties(std::vector<sdfData*> properties)
 {
     objectProperties = properties;
-    for (sdfData *i : objectProperties)
-        i->setParentCommon(this);
+    for (int i = 0; i < objectProperties.size(); i++)
+        objectProperties.at(i)->setParentCommon(this);
 }
 
 std::string sdfCommon::getName() const
@@ -3405,12 +3476,12 @@ std::vector<std::string> sdfData::getRequiredObjectProperties() const
     return requiredObjectProperties;
 }
 
-void sdfData::setMinimum(float min)
+void sdfData::setMinimum(double min)
 {
     minimum = min;
 }
 
-void sdfData::setMaximum(float max)
+void sdfData::setMaximum(double max)
 {
     maximum = max;
 }
@@ -3781,48 +3852,47 @@ sdfFile::~sdfFile()
     delete ns;
     ns = NULL;
 
-    for (sdfThing *i : things)
+    for (int i = 0; i < things.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete things[i];
+        things[i] = NULL;
     }
     things.clear();
 
-    for (sdfObject *i : objects)
+    for (int i = 0; i < objects.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete objects[i];
+        objects[i] = NULL;
     }
     objects.clear();
 
-    for (sdfProperty *i : properties)
+    for (int i = 0; i < properties.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete properties[i];
+        properties[i] = NULL;
     }
     properties.clear();
 
-    for (sdfAction *i : actions)
+    for (int i = 0; i < actions.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete actions[i];
+        actions[i] = NULL;
     }
     actions.clear();
 
-    for (sdfEvent *i : events)
+    for (int i = 0; i < events.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete events[i];
+        events[i] = NULL;
     }
     events.clear();
 
-    for (sdfData *i : datatypes)
+    for (int i = 0; i < datatypes.size(); i++)
     {
-        delete i;
-        i = NULL;
+        delete datatypes[i];
+        datatypes[i] = NULL;
     }
     datatypes.clear();
-
 }
 
 void sdfFile::setInfo(sdfInfoBlock *_info)
@@ -4217,10 +4287,111 @@ sdfData* sdfData::getThisAsSdfData()
 void sdfNamespaceSection::addNamespace(std::string pre, std::string ns)
 {
     namespaces[pre] = ns;
+
+    // link files no foreign namespace
+    namedFiles[pre] = prefixToFile[pre];
+
+    if (pre == default_ns)
+        namedFiles[pre] = NULL;
 }
 
 void sdfData::setUniqueItems(bool unique)
 {
     uniqueItems = unique;
     uniqueItemsDefined = true;
+}
+
+std::map<std::string, sdfFile*> sdfNamespaceSection::getNamedFiles() const
+{
+    return namedFiles;
+}
+
+string sdfCommon::getDefaultNamespace()
+{
+    sdfFile *top = this->getTopLevelFile();
+    if (top)
+        return top->getNamespace()->getDefaultNamespace();
+
+    return "";
+}
+
+map<string, string> sdfCommon::getNamespaces()
+{
+    sdfFile *top = this->getTopLevelFile();
+    if (top)
+        return top->getNamespace()->getNamespaces();
+
+    return {};
+}
+
+void sdfNamespaceSection::updateNamedFiles()
+{
+    // link files no foreign namespaces
+    map<string, string>::iterator it;
+    for (it = namespaces.begin(); it != namespaces.end(); it++)
+        namedFiles[it->first] = prefixToFile[it->first];
+
+    namedFiles[default_ns] = NULL;
+}
+
+void sdfData::setWritable(bool _writable)
+{
+    writable = _writable;
+    writableDefined = true;
+}
+
+void sdfData::setReadable(bool _readable)
+{
+    readable = _readable;
+    readableDefined = true;
+}
+
+void sdfNamespaceSection::removeNamespace(string pre)
+{
+    namespaces.erase(namespaces.find(pre));
+    namedFiles.erase(namedFiles.find(pre));
+}
+
+void sdfData::setMinInt(int64_t min)
+{
+    minInt = min;
+    minIntSet = true;
+}
+
+void sdfData::setMaxInt(uint64_t max)
+{
+    maxInt = max;
+    maxIntSet = true;
+}
+
+int64_t sdfData::getMinInt() const
+{
+    return minInt;
+}
+
+uint64_t sdfData::getMaxInt() const
+{
+    return maxInt;
+}
+
+void sdfData::eraseMinInt()
+{
+    minInt = 0;
+    minIntSet = false;
+}
+
+void sdfData::eraseMaxInt()
+{
+    maxInt = 0;
+    maxIntSet = false;
+}
+
+bool sdfData::getMinIntSet() const
+{
+    return minIntSet;
+}
+
+bool sdfData::getMaxIntSet() const
+{
+    return maxIntSet;
 }
