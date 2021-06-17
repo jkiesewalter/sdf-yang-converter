@@ -1,6 +1,6 @@
 # SDF-YANG-Converter
 
-This converter is work in progress. Currently, both directions (YANG->SDF and SDF->YANG) are roughly finished. Only `.sdf.json` is supported as file format for SDF models. For details concerning the conversion please refer to the tables below.
+This converter is work in progress. Currently, both directions (YANG->SDF and SDF->YANG) are roughly finished. Only `.sdf.json` is supported as file format for SDF models. For details concerning the conversion please refer to the tables below. Visit the [SDF-YANG-Converter playground](http://sdf-yang-converter.org/) for a demo of the converter.
 
 Prerequisites:
 * A copy of the [YANG GitHub repository](https://github.com/YangModels/yang) is needed to load the context of a YANG file
