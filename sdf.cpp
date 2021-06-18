@@ -96,7 +96,8 @@ void loadContext(const char *path = ".")
         {
             cout << "...found: " + names[i] << endl;
             files[i].fromFile(names[i]);
-            prefix = files[i].getNamespace()->getDefaultNamespace();
+            if (files[i].getNamespace())
+                prefix = files[i].getNamespace()->getDefaultNamespace();
             if (prefix != "")
                 prefixToFile[prefix] = &files[i];
         }
@@ -107,7 +108,10 @@ void loadContext(const char *path = ".")
 
         // update named files in namespaces after all files are loaded
         for (int i = 0; i < names.size(); i++)
-            files[i].getNamespace()->updateNamedFiles();
+        {
+            if (files[i].getNamespace())
+                files[i].getNamespace()->updateNamedFiles();
+        }
     }
     else
     {
@@ -1948,7 +1952,7 @@ void sdfObject::objectToFile(string path)
         output.close();
     }
     else
-        cerr << "Error opening file" << endl;
+        cerr << "sdfObject::objectToFile: Error opening file" << endl;
 
     validateFile(path);
 }
@@ -2126,7 +2130,7 @@ void sdfThing::thingToFile(string path)
         output.close();
     }
     else
-        cerr << "Error opening file" << endl;
+        cerr << "sdfThing::thingToFile: Error opening file" << endl;
 
     validateFile(path);
 }
@@ -2801,7 +2805,7 @@ sdfObject* sdfObject::fileToObject(string path, bool testForThing)
     }
     else
     {
-        cerr << "Error opening file" << endl;
+        cerr << "sdfObject::fileToObject: Error opening file" << endl;
         return NULL;
     }
     return this->jsonToObject(json_input, testForThing);
@@ -2923,7 +2927,7 @@ sdfThing* sdfThing::fileToThing(string path)
     }
     else
     {
-        cerr << "Error opening file" << endl;
+        cerr << "sdfThing::fileToThing: Error opening file" << endl;
         return NULL;
     }
     return this->jsonToThing(json_input);
@@ -4073,7 +4077,7 @@ void sdfFile::toFile(std::string path)
         output.close();
     }
     else
-        cerr << "Error opening file" << endl;
+        cerr << "sdfFile::toFile: Error opening file" << endl;
 
     validateFile(path);
 }
@@ -4215,7 +4219,7 @@ sdfFile* sdfFile::fromFile(std::string path)
     }
     else
     {
-        cerr << "Error opening file" << endl;
+        cerr << "sdfFile::fromFile: Error opening file" << endl;
         return NULL;
     }
     return this->fromJson(json_input);
