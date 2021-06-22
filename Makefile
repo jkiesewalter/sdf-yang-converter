@@ -1,11 +1,8 @@
-converter: converter.o sdf.o
-	g++ -o converter converter.o sdf.o -lyang -lnlohmann_json_schema_validator
+CXXFLAGS=-g3
+LDLIBS=-lyang -lnlohmann_json_schema_validator
+LINK.o=$(LINK.cc)
 
-converter.o: converter.cpp
-	g++ -c converter.cpp -g3
+converter:: converter.o sdf.o
 
-sdf.o: sdf.cpp
-	g++ -c sdf.cpp -g3
-	
 clean:
 	rm *.o converter
