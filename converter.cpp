@@ -4242,6 +4242,13 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module,
 
             vector<sdfData*> properties =
                     data->getItemConstr()->getObjectProperties();
+
+            // if the item constraints consist of an sdfRef
+            if (properties.empty() && data->getItemConstr()->getReference())
+            {
+                openRefs.push_back(tuple<sdfCommon*, lys_node*>{
+                    data->getItemConstr(), (lys_node*)list.get()});
+            }
             for (int i = 0; i < properties.size(); i++)
             {
                 childNode = sdfDataToNode(properties[i], childNode, module,
@@ -4676,18 +4683,6 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module,
             lys_node *child  = sdfDataToNode(data, child, module, openRefs,
                     openRefsType);
 
-            // the following is discarded for now
-            // (not putting a whole list into the grouping but instead putting
-            // the nodes of the list into a grouping)
-            /*if (child->nodetype == LYS_LIST)
-            {
-                *grp = (lys_node_grp&)*child;
-                if (i->getReference())
-                    openRefs.push_back(tuple<sdfData*, lys_node*>{
-                        i, (lys_node*)grp.get()
-                });
-            }
-            else*/
             if (child && child->nodetype == LYS_CONTAINER)
             {
                 grp = make_shared<lys_node_grp>((lys_node_grp&)*child);
@@ -4709,6 +4704,7 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module,
             setSdfSpecExtension((lys_node*)grp.get(), "sdfData");
             sdfRequiredToNode(data->getRequired(), module);
 
+            // replace the entry in openRefs
             if (data->getReference())
             {
                 auto it = openRefs.begin();
@@ -4724,8 +4720,8 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module,
         }
     }
 
-    // should the typedef always be on top-level so it can be reached
-    // from everywhere (scoping)? yes
+    // question (answered): should the typedef always be on top-level so it
+    // can be reached from everywhere (scoping)? yes
 }
 
 void convertInfoBlock(sdfInfoBlock *info, lys_module &module)
