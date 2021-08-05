@@ -21,7 +21,7 @@
 #define MIN_INT -9223372036854775807 // minimal int64
 #define JSON_MAX_STRING_LENGTH 2097152 // maximal length of a json string
 #define YANG_VERSION 2 // conversion is based on YANG 1.1
-#define IGNORE_NODE 8000 // flag to mark a node that is to be ignored
+#define IGNORE_NODE 0x8000 // flag to mark a node that is to be ignored
 
 // for convenience
 using json = nlohmann::json;
@@ -411,6 +411,8 @@ string generatePath(lys_node *node, lys_module *module = NULL,
     else
         automatic = avoidNull(lys_path(node, 0));
 
+//    if (avoidNull(node->name) == "alarm-type-id")
+//        cout << "!!!" + automatic << endl;
     if (automatic != "")
         return automatic;
 
@@ -599,6 +601,8 @@ LY_DATA_TYPE stringToLType(std::string type)
         return LY_TYPE_BITS;
     else if (type == "empty")
         return LY_TYPE_EMPTY;
+    else if (type == "instance-identifier")
+        return LY_TYPE_INST;
     else
         return LY_TYPE_UNKNOWN;
 }
@@ -728,6 +732,9 @@ vector<int64_t> rangeToInt(const char *range)
  */
 vector<float> rangeToFloat(const char *range)
 {
+    if (!range || strcmp(range, "") == 0)
+        return {};
+
     cmatch cm;
     string str(range);
 
@@ -977,6 +984,12 @@ sdfData* typeToSdfData(struct lys_type *type, sdfData *data,
             addOriginNote(data, "type", "union");
         }
     }
+    else if (strcmp(type->der->name, "instance-identifier") == 0)
+    {
+        // TODO: round trip
+        data->setType(json_string);
+        addOriginNote(data, "type", "instance-identifier");
+    }
     else if (stringToJsonDType(type->der->name) == json_type_undef
             && data->getSimpType() != json_array
             && strcmp(type->der->name, "enumeration") != 0
@@ -1115,7 +1128,8 @@ sdfData* typeToSdfData(struct lys_type *type, sdfData *data,
 
         // TODO: first byte 0x06 means regular match, 0x15 means invert-match
         // TODO: are the regexs of SDF and YANG compatible?
-        if (type->info.str.pat_count > 0)
+        // TODO: second condition is a hot fix
+        if (type->info.str.pat_count > 0 && type->base == LY_TYPE_STRING)
         {
             //pattern = type->info.str.patterns[0].expr;
             //data->setPattern(pattern);
@@ -1183,7 +1197,8 @@ sdfData* typeToSdfData(struct lys_type *type, sdfData *data,
             }
             data->setEnumString(enum_names);
         }
-        else if (type->info.str.length != NULL)
+        // TODO: The second condition is a hot fix
+        else if (type->info.str.length && type->base == LY_TYPE_STRING)
         {
             vector<float> min_max
                 = rangeToFloat(type->info.str.length->expr);
@@ -1444,6 +1459,9 @@ sdfData* leafToSdfData(struct lys_node_leaf *node,
         }
 
         leafs[generatePath((lys_node*)node)] = data;
+        leafs[generatePath((lys_node*)node, NULL, true)] = data;
+        if (data->getName() == "alarm-type-id")
+            cout << "ADDED " + generatePath((lys_node*)node) << endl;
     }
     assert(!dynamic_cast<sdfProperty*>(data));
     return data;
@@ -1703,6 +1721,7 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
 {
     if (!node)
         return NULL;
+
     sdfData *data;
     try
     {
@@ -1858,6 +1877,7 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
                 addOriginNote(next, "unique");
 
             data->addObjectProperty(next);
+
             if ((elem->flags & LYS_MAND_MASK) == LYS_MAND_TRUE)
                 data->addRequiredObjectProperty(avoidNull(elem->name));
 
@@ -1928,7 +1948,7 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
             data->addObjectProperty(next);
             com = next;
 
-            // TODO: unique, keys
+            // TODO: unique, ordered by
         }
         else if (elem->nodetype == LYS_NOTIF)
         {
@@ -2126,7 +2146,7 @@ vector<tuple<string, string, sdfCommon*>> assignReferences(
                 stillLeft.push_back(r);
                 if (com)
                     cout << "assignReferences: no reference found for "
-                        + strWRef + " of " + com->getName() << endl;
+                        + str + " of " + com->getName() << endl;
                 else
                     cout << "assignReferences: no reference found for "
                     + strWRef + " of (null)" << endl;
@@ -3098,7 +3118,7 @@ void fillLysType(sdfData *data, struct lys_type &type,
     for (int i = 0; i < convNote.size(); i++)
     {
         if (get<0>(convNote[i]) == "type")
-            origType = get<1>(convNote[i]);
+            origType = get<1>(convNote[i]); // TODO: require-instance
         if (get<0>(convNote[i]) == "pattern")
             origPattern.push_back(get<1>(convNote[i]));
         if (get<0>(convNote[i]) == "pattern-invert-match")
@@ -4751,8 +4771,8 @@ void convertNamespaceSection(sdfNamespaceSection *ns, lys_module &module,
         vector<tuple<sdfCommon*, lys_tpdf*>> &openRefsTpdf,
         vector<tuple<sdfCommon*, lys_type*>> &openRefsType)
 {
-    if (!ns)
-        return;
+//    if (!ns)
+//        return;
 
     string prefixString = "", nsString = "";
     if (ns)
@@ -4777,56 +4797,59 @@ void convertNamespaceSection(sdfNamespaceSection *ns, lys_module &module,
         module.ns = storeString(nsString);
 
     // import other mentioned namespaces
-    map<string, sdfFile*> namedFiles = ns->getNamedFiles();
-    map<string, sdfFile*>::iterator it;
-    for (it = namedFiles.begin(); it != namedFiles.end(); it++)
+    if (ns)
     {
-        // if the named file is not the one being converted at the moment
-        // i.e. a foreign one
-        if (it->second && it->first != ns->getDefaultNamespace())
+        map<string, sdfFile*> namedFiles = ns->getNamedFiles();
+        map<string, sdfFile*>::iterator it;
+        for (it = namedFiles.begin(); it != namedFiles.end(); it++)
         {
-            lys_module *impMod = NULL;
-            // if refTopFile has not already been converted convert it now
-            for (int i = 0; i < fileToModule.size(); i++)
+            // if the named file is not the one being converted at the moment
+            // i.e. a foreign one
+            if (it->second && it->first != ns->getDefaultNamespace())
             {
-                if (get<sdfFile*>(fileToModule[i])->getInfo()->getTitle()
-                        == it->second->getInfo()->getTitle())
+                lys_module *impMod = NULL;
+                // if refTopFile has not already been converted convert it now
+                for (int i = 0; i < fileToModule.size(); i++)
                 {
-                    impMod = get<lys_module*>(fileToModule[i]);
-                    break;
+                    if (get<sdfFile*>(fileToModule[i])->getInfo()->getTitle()
+                            == it->second->getInfo()->getTitle())
+                    {
+                        impMod = get<lys_module*>(fileToModule[i]);
+                        break;
+                    }
                 }
-            }
 
-            if (!impMod)
-            {
-                shared_ptr<lys_module> m(new lys_module());
-                storeVoidPointer((shared_ptr<void>)m);
-                m->ctx = module.ctx;
-                impMod = m.get();
-//                fileToModule.push_back(tuple<sdfFile*, lys_module*>{
-//                    it->second, impMod});
+                if (!impMod)
+                {
+                    shared_ptr<lys_module> m(new lys_module());
+                    storeVoidPointer((shared_ptr<void>)m);
+                    m->ctx = module.ctx;
+                    impMod = m.get();
+    //                fileToModule.push_back(tuple<sdfFile*, lys_module*>{
+    //                    it->second, impMod});
 
-                sdfFileToModule(*it->second, *m, openRefs, openRefsTpdf,
-                        openRefsType);
-            }
+                    sdfFileToModule(*it->second, *m, openRefs, openRefsTpdf,
+                            openRefsType);
+                }
 
-            bool alreadyImported = false;
-            for (int i = 0; i< module.imp_size; i++)
-                if (impMod == module.imp[i].module)
-                    alreadyImported = true;
+                bool alreadyImported = false;
+                for (int i = 0; i< module.imp_size; i++)
+                    if (impMod == module.imp[i].module)
+                        alreadyImported = true;
 
-            if (!alreadyImported && strcmp(impMod->name, module.name) != 0)
-            {
-                shared_ptr<lys_import[]> imp(
-                        new lys_import[module.imp_size+1]());
-                for (int i = 0; i < module.imp_size; i++)
-                    imp[i] = module.imp[i];
-                storeVoidPointer((shared_ptr<void>)imp);
-                imp[module.imp_size].module = impMod;
-                imp[module.imp_size].prefix = impMod->prefix;
-                strcpy(imp[module.imp_size].rev, impMod->rev->date);
-                module.imp = imp.get();
-                module.imp_size++;
+                if (!alreadyImported && strcmp(impMod->name, module.name) != 0)
+                {
+                    shared_ptr<lys_import[]> imp(
+                            new lys_import[module.imp_size+1]());
+                    for (int i = 0; i < module.imp_size; i++)
+                        imp[i] = module.imp[i];
+                    storeVoidPointer((shared_ptr<void>)imp);
+                    imp[module.imp_size].module = impMod;
+                    imp[module.imp_size].prefix = impMod->prefix;
+                    strcpy(imp[module.imp_size].rev, impMod->rev->date);
+                    module.imp = imp.get();
+                    module.imp_size++;
+                }
             }
         }
     }
