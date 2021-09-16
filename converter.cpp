@@ -1,4 +1,14 @@
-#include <iostream>
+/*!
+ * @file converter.cpp
+ * @brief The implementation of header converter.hpp
+ *
+ * At the core of the converter tool is the piece of software that facilitates
+ * the actual conversions. It can generally be split into the two conversion
+ * directions SDF to YANG and YANG to SDF.
+ */
+#include "converter.hpp"
+
+/*#include <iostream>
 #include <fstream>
 #include <sstream>
 #include <stdio.h>
@@ -27,9 +37,8 @@
 using json = nlohmann::json;
 using nlohmann::json_schema::json_validator;
 using namespace std;
-
 map<string, sdfCommon*> typedefs;
-/* vector of tuples with typedef names and sdfCommons that use them */
+// vector of tuples with typedef names and sdfCommons that use them
 vector<tuple<string, string, sdfCommon*>> typerefs;
 
 map<string, sdfCommon*> identities;
@@ -133,10 +142,7 @@ struct lys_tpdf identTpdf = {
         .type = {.base = LY_TYPE_IDENT}
 };
 
-/*
- * Cast a char array to string with NULL being
- * translated to the empty string
- */
+*/
 string avoidNull(const char *c)
 {
     if (c == NULL)
@@ -210,9 +216,6 @@ void* storeVoidPointer(shared_ptr<void> v)
 
 sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object);
 
-/*
- * Remove all quotation marks from a given string
- */
 string removeQuotationMarksFromString(string input)
 {
     string result = input;
@@ -378,12 +381,8 @@ bool moduleUsesModule(lys_module *module, lys_module *wanted)
     return subTreeUsesModule(module->data, wanted);
 }
 
-/*
- * Recursively generate the path of a node
- * If the given module differs from the module of the node, add a prefix
- */
-string generatePath(lys_node *node, lys_module *module = NULL,
-        bool addPrefix = false)
+string generatePath(lys_node *node, lys_module *module,
+        bool addPrefix)
 {
     if (!node)
     {
@@ -446,7 +445,7 @@ string generatePath(lys_node *node, lys_module *module = NULL,
  * It is not possible to simply call generatePath on the target in
  * the node info because the target node is not always given
  */
-string expandPath(lys_node_leaf *node, bool addPrefix = false)
+string expandPath(lys_node_leaf *node, bool addPrefix)
 {
     if (node == NULL)
     {
@@ -479,14 +478,14 @@ string expandPath(lys_node_leaf *node, bool addPrefix = false)
 /*
  * Overloaded function
  */
-string expandPath(lys_node_leaflist *node, bool addPrefix = false)
+string expandPath(lys_node_leaflist *node, bool addPrefix)
 {
     return expandPath((lys_node_leaf*) node, addPrefix);
 }
 /*
  * Overloaded function
  */
-string expandPath(lys_tpdf *tpdf, bool addPrefix = false)
+string expandPath(lys_tpdf *tpdf, bool addPrefix)
 {
 //    lys_node_leaf *node = (lys_node_leaf*)tpdf;
 //    node->type = tpdf->type;
@@ -651,7 +650,7 @@ string parseTypeToString(struct lys_type *type)
     // LY_TYPE_INST? translate in this function?
 }
 
-void addOriginNote(sdfCommon *com, string stmt, string arg = "")
+void addOriginNote(sdfCommon *com, string stmt, string arg)
 {
     string dsc = com->getDescription(), note = stmt;
     if (arg != "")
@@ -874,7 +873,7 @@ string whenToDescription(lys_when *when, string dsc)
  *  and set accordingly in the given sdfData element
  */
 sdfData* typeToSdfData(struct lys_type *type, sdfData *data,
-        bool parentIsTpdf = false)
+        bool parentIsTpdf)
 {
     // TODO: clean up this function
     if (!type)
@@ -1375,7 +1374,7 @@ sdfData* typedefToSdfData(struct lys_tpdf *tpdf)
  * a corresponding sdfProperty object is generated
  */
 sdfProperty* leafToSdfProperty(struct lys_node_leaf *node,
-        sdfObject *object = NULL)
+        sdfObject *object)
 {
     sdfProperty *property = new sdfProperty(avoidNull(node->name),
             avoidNull(node->dsc),
@@ -1418,7 +1417,7 @@ sdfProperty* leafToSdfProperty(struct lys_node_leaf *node,
 }
 
 sdfData* leafToSdfData(struct lys_node_leaf *node,
-        sdfObject *object = NULL)
+        sdfObject *object)
 {
     sdfData *data = new sdfData(*leafToSdfProperty(node, object));
 
@@ -1472,7 +1471,7 @@ sdfData* leafToSdfData(struct lys_node_leaf *node,
  * a corresponding sdfProperty object is generated
  */
 sdfProperty* leaflistToSdfProperty(struct lys_node_leaflist *node,
-        sdfObject *object = NULL)
+        sdfObject *object)
 {
     sdfProperty *property;
     try
@@ -1552,7 +1551,7 @@ sdfProperty* leaflistToSdfProperty(struct lys_node_leaflist *node,
 }
 
 sdfData* leaflistToSdfData(struct lys_node_leaflist *node,
-        sdfObject *object = NULL)
+        sdfObject *object)
 {
     sdfData *data = new sdfData(*leaflistToSdfProperty(node, object));
 
@@ -1604,7 +1603,7 @@ sdfThing* containerToSdfThing(struct lys_node_container *node)
  * In case of an action node, data has to be given
  */
 sdfAction* actionToSdfAction(lys_node_rpc_action *node, sdfObject *object,
-        sdfData *data = NULL)
+        sdfData *data)
 {
     sdfAction *action = new sdfAction(avoidNull(node->name),
             avoidNull(node->dsc));
@@ -1831,13 +1830,14 @@ sdfData* nodeToSdfData(struct lys_node *node, sdfObject *object)
 
             // set the reference to the sdfData element of the
             // corresponding default case as default
+            // TODO: not possible because there are no default objects
             if (((lys_node_choice*)elem)->dflt)
             {
                 sdfData *dflt = new sdfData(
                         ((lys_node_choice*)elem)->dflt->name, "", "");
                 dflt->setReference(
                     branchRefs[generatePath(((lys_node_choice*)elem)->dflt)]);
-                choiceData->setDefaultObject(dflt);
+                //choiceData->setDefaultObject(dflt);
             }
             choiceData->setDescription(whenToDescription(
                  ((lys_node_choice*)elem)->when, choiceData->getDescription()));
@@ -2208,7 +2208,7 @@ sdfFile* moduleToSdfFile(lys_module *module);
  * a corresponding sdfThing object is generated
  */
 sdfObject* moduleToSdfObject(const struct lys_module *module,
-        sdfObject *object =  NULL)
+        sdfObject *object)
 {
     if (!object)
         object = new sdfObject(avoidNull(module->name),
@@ -2363,13 +2363,14 @@ sdfObject* moduleToSdfObject(const struct lys_module *module,
             property->addObjectProperty(choiceData);
             // set the reference to the sdfData element of the
             // corresponding default case as default
+            // TODO: not possible because there are no default objects
             if (((lys_node_choice*)elem)->dflt)
             {
                 sdfData *dflt = new sdfData(
                         ((lys_node_choice*)elem)->dflt->name, "", "");
                 dflt->setReference(
                     branchRefs[generatePath(((lys_node_choice*)elem)->dflt)]);
-                choiceData->setDefaultObject(dflt);
+                //choiceData->setDefaultObject(dflt);
             }
 
             object->addProperty(property);
@@ -2608,7 +2609,7 @@ sdfObject* moduleToSdfObject(const struct lys_module *module,
     return object;
 }
 
-sdfObject* containerToSdfObject(lys_node_container *cont, sdfObject *object = NULL)
+sdfObject* containerToSdfObject(lys_node_container *cont, sdfObject *object)
 {
     if (!object)
         object = new sdfObject(avoidNull(cont->name),
@@ -2642,7 +2643,7 @@ sdfObject* containerToSdfObject(lys_node_container *cont, sdfObject *object = NU
 void removeNode(lys_node &node);
 void addNode(lys_node &child, lys_node &parent, lys_module &module);
 
-sdfThing* containerToSdfThing(lys_node_container *cont, sdfThing *thing = NULL)
+sdfThing* containerToSdfThing(lys_node_container *cont, sdfThing *thing)
 {
     if (!thing)
         thing = new sdfThing(avoidNull(cont->name),
@@ -3051,7 +3052,7 @@ vector<tuple<string, string>> extractConvNote(sdfCommon *com)
  * a list/leaf-list node with "min-elements" > 0
  * or a non-presence container node with at least one mandatory child node
  */
-bool setMandatory(lys_node *node, bool firstLevel = true)
+bool setMandatory(lys_node *node, bool firstLevel)
 {
     if (!node)
         return false;
@@ -3732,7 +3733,7 @@ lys_module* sdfFileToModule(sdfFile &file, lys_module &module,
         vector<tuple<sdfCommon*, lys_type*>> &openRefsType);
 
 lys_node* sdfRefToNode(sdfCommon *com, lys_node *node, lys_module &module,
-        bool nodeIsTpdf = false)
+        bool nodeIsTpdf)
 {
     if (!com || !com->getReference())
         // || (node->parent && node->parent->nodetype == LYS_AUGMENT && node->parent->module != &module))

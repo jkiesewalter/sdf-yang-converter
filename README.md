@@ -10,6 +10,8 @@ Prerequisites:
 
 Compile the code with `make`. Run the converter with `./converter -f path/to/input/file [- o path/to/output/file] [-c path/to/yang/repo]`, e.g. `./converter -f ./yang/standard/ietf/RFC/ietf-l2vpn-svc.yang -c ./yang` for conversion from YANG to SDF. If no output file name is provided, the output file will be named after the input model.
 
+A doxygen documentation can be generated directly from the source code by executing `doxygen Doxyfile` (requires doxygen). Afterwards, open `documentation/html/index.html` in your preferred browser for the HTML version of the documentation.
+
 ## Conversion table YANG->SDF
 
 |YANG statement|translated to SDF|done?|problems/remarks|

@@ -1,10 +1,19 @@
+/*!
+ * @file sdf.cpp
+ * @brief The implementation of header sdf.hpp
+ *
+ * To be able to process SDF models efficiently a tool to serialize and
+ * deserialize them was implemented as part of building a SDF/YANG converter.
+ */
+
 #include "sdf.hpp"
 
-// for convenience
-using json = nlohmann::json;
 using nlohmann::json_schema::json_validator;
 using namespace std;
-
+using json = nlohmann::json;
+/**<
+ * Uses nlohmann/json, call it json for convenience
+ */
 
 map<string, sdfCommon*> existingDefinitons;
 map<string, sdfCommon*> existingDefinitonsGlobal;
@@ -13,7 +22,16 @@ vector<tuple<string, sdfCommon*>> unassignedReqs;
 map<string, sdfFile*> prefixToFile;
 
 bool contextLoaded = false;
+/**<
+ * Global variable to determine whether directory has been searched for other
+ * SDF files
+ */
 bool isContext = true;
+/**<
+ * Global variable to determine whether the file that is being worked on is for
+ * context or is the file that the serialiser/deserialiser was originally
+ * used on.
+ */
 
 string jsonDTypeToString(jsonDataType type)
 {
@@ -215,8 +233,13 @@ string correctValue(string val)
     return correct;
 }
 
-sdfCommon::sdfCommon(string _name, string _description, sdfCommon *_reference,
-        vector<sdfCommon*> _required, sdfFile *_file)
+sdfCommon::sdfCommon(
+        std::string _name,
+        std::string _description,
+        sdfCommon *_reference,
+        std::vector<sdfCommon*> _required,
+        sdfFile *_file
+        )
             : description(_description), name(_name), reference(_reference),
               required(_required), parentFile(_file)
 {
@@ -332,9 +355,13 @@ json sdfCommon::commonToJson(json prefix)
     return prefix;
 }
 
-sdfObjectElement::sdfObjectElement(string _name, string _description,
-        sdfCommon *_reference, vector<sdfCommon*> _required,
-        sdfObject *_parentObject)
+sdfObjectElement::sdfObjectElement(
+        std::string _name,
+        std::string _description,
+        sdfCommon *_reference,
+        std::vector<sdfCommon*> _required,
+        sdfObject *_parentObject
+        )
             : sdfCommon(_name, _description, _reference, _required),
               parentObject(_parentObject)
 {
@@ -374,8 +401,12 @@ string sdfObjectElement::generateReferenceString()
     }
 }*/
 
-sdfInfoBlock::sdfInfoBlock(string _title, string _version, string _copyright,
-        string _license)
+sdfInfoBlock::sdfInfoBlock(
+        std::string _title,
+        std::string _version,
+        std::string _copyright,
+        std::string _license
+        )
             : title(_title), version(_version), copyright(_copyright),
               license(_license)
 {}
@@ -418,8 +449,10 @@ sdfNamespaceSection::sdfNamespaceSection()
     namedFiles = map<string, sdfFile*>();
 }
 
-sdfNamespaceSection::sdfNamespaceSection(map<string, string> _namespaces,
-        string _default_ns)
+sdfNamespaceSection::sdfNamespaceSection(
+        std::map<std::string, std::string> _namespaces,
+        std::string _default_ns
+        )
             : namespaces(_namespaces), default_ns(_default_ns)
 {
     // link files no foreign namespaces
@@ -467,9 +500,15 @@ json sdfNamespaceSection::namespaceToJson(json prefix)
 sdfData::sdfData() : sdfData("", "", "")
 {}
 
-sdfData::sdfData(string _name, string _description, string _type,
-        sdfCommon *_reference, vector<sdfCommon*> _required,
-        sdfCommon *_parentCommon, vector<sdfData*> _choice)
+sdfData::sdfData(
+        std::string _name,
+        std::string _description,
+        std::string _type,
+        sdfCommon *_reference,
+        std::vector<sdfCommon*> _required,
+        sdfCommon *_parentCommon,
+        std::vector<sdfData*> _choice
+        )
             : sdfCommon(_name, _description, _reference, _required),
               parent(_parentCommon)
 {
@@ -502,8 +541,8 @@ sdfData::sdfData(string _name, string _description, string _type,
     defaultNumber = NAN;
     constantInt = -1;
     defaultInt = -1;
-    defaultObject = NULL;
-    constantObject = NULL;
+    //defaultObject = NULL;
+    //constantObject = NULL;
     defaultBoolArray = {};
     constantBoolArray = {};
     defaultStringArray = {};
@@ -542,11 +581,16 @@ sdfData::sdfData(string _name, string _description, string _type,
     requiredObjectProperties = {};
 }
 
-sdfData::sdfData(string _name, string _description, jsonDataType _type,
-        sdfCommon *_reference, vector<sdfCommon*> _required,
-        sdfCommon *_parentCommon, vector<sdfData*> _choice)
-        : sdfData(_name, _description, jsonDTypeToString(_type), _reference,
-        _required, _parentCommon, _choice)
+sdfData::sdfData(
+        std::string _name,
+        std::string _description,
+        jsonDataType _type,
+        sdfCommon *_reference,
+        std::vector<sdfCommon*> _required,
+        sdfCommon *_parentCommon,
+        std::vector<sdfData*> _choice)
+            : sdfData(_name, _description, jsonDTypeToString(_type), _reference,
+                    _required, _parentCommon, _choice)
 {}
 
 sdfData::sdfData(sdfData &data)
@@ -577,8 +621,8 @@ sdfData::sdfData(sdfData &data)
     defaultNumber = data.getDefaultNumber();
     constantInt = data.getConstantInt();
     defaultInt = data.getDefaultInt();
-    defaultObject = data.getDefaultObject();
-    constantObject = data.getConstantObject();
+    //defaultObject = data.getDefaultObject();
+    //constantObject = data.getConstantObject();
     defaultBoolArray = data.getDefaultBoolArray();
     constantBoolArray = data.getConstantBoolArray();
     defaultStringArray = data.getDefaultStringArray();
@@ -1272,13 +1316,13 @@ json sdfData::dataToJson(json prefix)
             data["const"] = this->getConstantBoolArray();
         else if (!this->getConstantIntArray().empty())
             data["const"] = this->getConstantIntArray();
-        // TODO: is there even a constant object?
-        else if (this->getConstantObject())
+        // TODO: Is there even a constant object? No I think?
+        /*else if (this->getConstantObject())
         {
             json tmpJson;
             data["const"]
                  = this->getConstantObject()->dataToJson(tmpJson)["sdfData"];
-        }
+        }*/
     }
     if (defaultDefined)
     {
@@ -1298,13 +1342,13 @@ json sdfData::dataToJson(json prefix)
             data["default"] = this->getDefaultBoolArray();
         else if (!this->getDefaultIntArray().empty())
             data["default"] = this->getDefaultIntArray();
-        // TODO: is there even a default object?
-        else if (this->getDefaultObject())
+        // TODO: Is there even a default object? I don't think so?
+        /*else if (this->getDefaultObject())
         {
             json tmpJson;
             data["default"]
                  = this->getDefaultObject()->dataToJson(tmpJson)["sdfData"];
-        }
+        }*/
     }
     if (!isnan(this->getMinimum()))
         data["minimum"] = this->getMinimum();
@@ -1377,9 +1421,10 @@ json sdfData::dataToJson(json prefix)
     return prefix;
 }
 
-sdfEvent::sdfEvent(string _name, string _description, sdfCommon *_reference,
-        vector<sdfCommon*> _required, sdfObject *_parentObject,
-        sdfData* _outputData, vector<sdfData*> _datatypes)
+sdfEvent::sdfEvent(std::string _name, std::string _description,
+        sdfCommon *_reference,  vector<sdfCommon*> _required,
+        sdfObject *_parentObject, sdfData* _outputData,
+        vector<sdfData*> _datatypes)
             : sdfObjectElement(_name, _description, _reference, _required),
               sdfCommon(_name, _description, _reference, _required),
               outputData(_outputData), datatypes(_datatypes)
@@ -1540,10 +1585,16 @@ void sdfAction::addDatatype(sdfData *datatype)
     datatype->setParentCommon((sdfCommon*)this);
 }
 
-sdfAction::sdfAction(string _name, string _description, sdfCommon *_reference,
-        vector<sdfCommon*> _required, sdfObject *_parentObject,
-        sdfData* _inputData, vector<sdfData*> _requiredInputData,
-        sdfData* _outputData, vector<sdfData*> _datatypes)
+sdfAction::sdfAction(
+        std::string _name,
+        std::string _description,
+        sdfCommon *_reference,
+        vector<sdfCommon*> _required,
+        sdfObject *_parentObject,
+        sdfData* _inputData,
+        vector<sdfData*> _requiredInputData,
+        sdfData* _outputData,
+        vector<sdfData*> _datatypes)
             : sdfCommon(_name, _description, _reference, _required),
               inputData(_inputData), requiredInputData(_requiredInputData),
               outputData(_outputData), datatypes(_datatypes)
@@ -1702,12 +1753,17 @@ json sdfAction::actionToJson(json prefix)
     return prefix;
 }
 
-sdfProperty::sdfProperty(string _name, string _description,
-        jsonDataType _type, sdfCommon *_reference,
-        vector<sdfCommon*> _required, sdfObject *_parentObject)
-        : sdfData(_name, _description, _type, _reference, _required),
-          sdfObjectElement(_name, _description, _reference, _required),
-          sdfCommon(_name, _description, _reference, _required)
+sdfProperty::sdfProperty(
+        std::string _name,
+        std::string _description,
+        jsonDataType _type,
+        sdfCommon *_reference,
+        std::vector<sdfCommon*> _required,
+        sdfObject *_parentObject
+        )
+            : sdfData(_name, _description, _type, _reference, _required),
+              sdfObjectElement(_name, _description, _reference, _required),
+              sdfCommon(_name, _description, _reference, _required)
 {
     this->setParentObject(_parentObject);
     this->setParentCommon(NULL);
@@ -1761,10 +1817,17 @@ json sdfProperty::propertyToJson(json prefix)
     return prefix;
 }
 
-sdfObject::sdfObject(string _name, string _description, sdfCommon *_reference,
-        vector<sdfCommon*> _required, vector<sdfProperty*> _properties,
-        vector<sdfAction*> _actions, vector<sdfEvent*> _events,
-        vector<sdfData*> _datatypes, sdfThing *_parentThing)
+sdfObject::sdfObject(
+        std::string _name,
+        std::string _description,
+        sdfCommon *_reference,
+        vector<sdfCommon*> _required,
+        vector<sdfProperty*> _properties,
+        vector<sdfAction*> _actions,
+        vector<sdfEvent*> _events,
+        vector<sdfData*> _datatypes,
+        sdfThing *_parentThing
+        )
             : sdfCommon(_name, _description, _reference, _required),
               properties(_properties), actions(_actions), events(_events),
               datatypes(_datatypes)
@@ -2005,9 +2068,15 @@ string sdfObject::generateReferenceString(sdfCommon *child, bool import)
         */
 }
 
-sdfThing::sdfThing(string _name, string _description, sdfCommon *_reference,
-        vector<sdfCommon*> _required, vector<sdfThing*> _things,
-        vector<sdfObject*> _objects, sdfThing *_parentThing)
+sdfThing::sdfThing(
+        std::string _name,
+        std::string _description,
+        sdfCommon *_reference,
+        vector<sdfCommon*> _required,
+        vector<sdfThing*> _things,
+        vector<sdfObject*> _objects,
+        sdfThing *_parentThing
+        )
             : sdfCommon(_name, _description, _reference, _required),
               childThings(_things)//, childObjects(_objects)
 {
@@ -2966,7 +3035,7 @@ void sdfData::setType(jsonDataType _type)
     this->simpleType = _type;
 }
 
-void sdfData::setType(string _type)
+void sdfData::setType(std::string _type)
 {
     this->derType = _type;
     this->simpleType = stringToJsonDType(_type);
@@ -3054,7 +3123,7 @@ vector<string> sdfData::getConstantStringArray() const
     return constantStringArray;
 }
 
-void sdfData::setConstantArray(vector<string> constantArray)
+void sdfData::setConstantArray(std::vector<std::string> constantArray)
 {
     this->constantStringArray = constantArray;
     this->constDefined = true;
@@ -3065,7 +3134,7 @@ vector<string> sdfData::getDefaultStringArray() const
     return defaultStringArray;
 }
 
-void sdfData::setDefaultArray(vector<string> defaultArray)
+void sdfData::setDefaultArray(std::vector<std::string> defaultArray)
 {
     this->defaultStringArray = defaultArray;
     this->defaultDefined = true;
@@ -3420,6 +3489,7 @@ void sdfData::setItemConstr(sdfData *constr)
     }
 }
 
+/*
 void sdfData::setConstantObject(sdfData *object)
 {
     constantObject = object;
@@ -3441,6 +3511,7 @@ sdfData* sdfData::getDefaultObject() const
 {
     return defaultObject;
 }
+*/
 
 void sdfData::setObjectProperties(std::vector<sdfData*> properties)
 {
@@ -4330,7 +4401,7 @@ map<string, string> sdfCommon::getNamespaces()
 
 void sdfNamespaceSection::updateNamedFiles()
 {
-    // link files no foreign namespaces
+    // link files to foreign namespaces
     map<string, string>::iterator it;
     for (it = namespaces.begin(); it != namespaces.end(); it++)
         namedFiles[it->first] = prefixToFile[it->first];
