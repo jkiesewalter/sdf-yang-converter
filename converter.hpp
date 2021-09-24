@@ -724,27 +724,6 @@ sdfProperty* leaflistToSdfProperty(struct lys_node_leaflist *node,
 sdfData* leaflistToSdfData(struct lys_node_leaflist *node,
         sdfObject *object = NULL);
 
-
-/**
- * The information is extracted from the given lys_node_list struct and
- * a corresponding sdfData object is generated
- * 
- * @param node A pointer to the lys_node_list in question
- * 
- * @return A pointer to the generated sdfData object
- */
-sdfData* listToSdfData(struct lys_node_list *node);
-
-/**
- * The information is extracted from the given lys_node_rpc_action struct and
- * a corresponding sdfAction object is generated
- * 
- * @param node A pointer to the lys_node_rpc_action in question
- * 
- * @return A pointer to the generated sdfAction object
- */
-sdfAction* rpcToSdfAction(struct lys_node_rpc_action *node);
-
 /**
  * The information is extracted from the given lys_node_container struct and
  * a corresponding sdfThing object is generated
@@ -779,15 +758,28 @@ sdfAction* actionToSdfAction(lys_node_rpc_action *node, sdfObject *object,
 string sdfSpecExtToString(lys_ext_instance **ext, int ext_size);
 
 /**
- * Determine whether a lys_node has child nodes where the unique flag is set
+ * This function is borrowed and modified from resolve.c and resolves the
+ * operator used in lys_iffeature structs.
  * 
- * @param list A pointer to the lys_node whose child nodes are to be checked.
- *             This only makes sense if the lys_node is a list node but the
- *             function will work for any node type.
- *             
- * @return Whether the given node has child nodes where the unique flag is set
+ * @param list The exression array that contains the coded operator
+ * @param pos  The position at which the operator can be found in list
+ * 
+ * @return The operator
  */
-bool listHasUniqueItems(lys_node *list);
+uint8_t iff_getop(uint8_t *list, int pos);
+
+/**
+ * This function is borrowed and modified from resolve.c of libyang and resolves
+ * the lys_iffeature back into a string recursively.
+ * 
+ * @param expr    The lys_iffeature struct to resolve
+ * @param index_e The current position in expr
+ * @param index_f The current position in the features array of expr
+ * 
+ * @return An if-feature string as it would be printed in a YANG module
+ */
+string resolve_iffeature_recursive(struct lys_iffeature *expr, int *index_e, 
+        int *index_f);
 
 /**
  * Convert the content of a given lys_node into an sdfData object
@@ -827,7 +819,7 @@ sdfFile* moduleToSdfFile(lys_module *module);
 
 /**
  * The information is extracted from the given lys_module struct and
- * a corresponding sdfOjbect object is generated or filled
+ * a corresponding sdfOjbect object is generated or filled (deprecated)
  * 
  * @param module A pointer to the given lys_module struct
  * @param object A pointer to an already existing sdfObject to be filled
@@ -876,14 +868,19 @@ sdfThing* containerToSdfThing(lys_node_container *cont, sdfThing *thing = NULL);
 sdfFile* moduleToSdfFile(lys_module *module);
 
 /**
- * Add an argument to the sdf-spec extension
+ * Add an sdf-spec extension instance with a specified argument to the given 
+ * list of extension instances
  * 
- * @param arg The string to add as an argument
+ * @param arg       The string to add as an argument to the new sdf-spec
+ *                  extension instance
+ * @param exts      An array of pointers to the existing extension instances
+ * @param exts_size The number of elements in the exts array
  * 
- * @return A pointer to an lys_ext_instance array containing the finished
+ * @return A pointer to an lys_ext_instance array containing the new
  *         extension (as used by libyang)
  */
-lys_ext_instance** argToSdfSpecExtension(string arg);
+lys_ext_instance** argToSdfSpecExtension(string arg, lys_ext_instance **exts,
+        uint8_t exts_size);
 
 /**
  * Add the sdf-spec extension to a lys_tpdf
@@ -1002,6 +999,14 @@ lys_module* sdfFileToModule(sdfFile &file, lys_module &module,
         vector<tuple<sdfCommon*, lys_node*>> &openRefs,
         vector<tuple<sdfCommon*, lys_tpdf*>> &openRefsTpdf,
         vector<tuple<sdfCommon*, lys_type*>> &openRefsType);
+
+/**
+ * Traverse the subtree of a node and return the first found leaf node
+ * 
+ * @param node The node whose subree should be traversed and searched
+ * @return A pointer to the leaf node that was found, NULL if none was found
+ */
+lys_node_leaf* findLeafInSubtreeRecursive(lys_node *node);
 
 /**
  * Find what an sdfRef corresponds to in YANG and assign that to the specified

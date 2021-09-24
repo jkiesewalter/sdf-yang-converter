@@ -633,8 +633,8 @@ sdfData::sdfData(sdfData &data)
     constantIntArray = data.getConstantIntArray();
     //constantAsCharArray = data.getConstantAsCharArray();
     //defaultAsCharArray = data.getDefaultAsCharArray();
-    exclusiveMaximum_bool = false; // TODO
-    exclusiveMinimum_bool = false; // TODO
+    exclusiveMaximum_bool = false;
+    exclusiveMinimum_bool = false;
     minLength = data.getMinLength();
     maxLength = data.getMaxLength();
     minimum = data.getMinimum();
@@ -665,6 +665,7 @@ sdfData::sdfData(sdfData &data)
     //for (sdfData *d : data.getObjectProperties())
     //    this->addObjectProperty(new sdfData(*d));
     requiredObjectProperties = data.getRequiredObjectProperties();
+    enumString = data.getEnumString();
 }
 sdfData::sdfData(sdfProperty &prop)
     : sdfData((sdfData&)prop)
@@ -1790,15 +1791,8 @@ sdfProperty::sdfProperty(sdfData &data)
     if (ic)
     {
         ic->setParentCommon((sdfCommon*)this);
-//        for (int i = 0; i < ic->getObjectProperties().size(); i++)
-//            ic->getObjectProperties().at(i)->setParentCommon((sdfCommon*)this);
     }
 }
-
-//bool sdfProperty::hasChild(sdfCommon *child) const
-//{
-//    return this->sdfData::hasChild(child);
-//}
 
 string sdfProperty::generateReferenceString(sdfCommon *child, bool import)
 {
@@ -2479,14 +2473,25 @@ sdfData* sdfData::jsonToData(json input)
         {
             if (it.value().is_boolean())
                 this->exclusiveMinimum_bool = it.value();
-            else if (it.value().is_number())
+            else if (it.value().is_number_integer()
+                    && (simpleType == json_integer
+                            || simpleType == json_type_undef))
+            {
+            }
+            if (it.value().is_number())
                 this->exclusiveMinimum_number = it.value();
         }
         else if (it.key() == "exclusiveMaximum" && !it.value().empty())
         {
             if (it.value().is_boolean())
                 this->exclusiveMaximum_bool = it.value();
-            else if (it.value().is_number())
+            else if (it.value().is_number_integer()
+                    && (simpleType == json_integer
+                            || simpleType == json_type_undef))
+            {
+                this->maxIntSet = true;
+            }
+            if (it.value().is_number())
                 this->exclusiveMaximum_number = it.value();
         }
         else if (it.key() == "multipleOf" && !it.value().empty())
@@ -2819,46 +2824,21 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
         unassignedRefs = assignRefs(unassignedRefs, REF);
         unassignedReqs = assignRefs(unassignedReqs, REQ);
 
-        if (!unassignedRefs.empty() || !unassignedReqs.empty())
-            cerr << "There is/are "
-            + to_string(unassignedRefs.size()+unassignedReqs.size())
-            + " reference(s) left unassigned" << endl;
-        else
+        //if (!unassignedRefs.empty() || !unassignedReqs.empty())
+        //    cerr << "There is/are "
+        //    + to_string(unassignedRefs.size()+unassignedReqs.size())
+        //    + " reference(s) left unassigned" << endl;
+        if (unassignedRefs.empty() && unassignedReqs.empty())
             cout << "All references resolved" << endl;
 
         if (isContext)
         {
-//            unassignedRefs = {};
-//            unassignedReqs = {};
-
             if (this->getNamespace())
                 this->getNamespace()->makeDefinitionsGlobal();
         }
     }
-    // jsonToCommon needs to be called twice because of sdfRequired
-    // (which cannot be filled before the rest of the object)
-    // not anymore (changed way of assigning sdfRef)
-    //this->jsonToCommon(input);
     return this;
 }
-
-//bool sdfObject::hasChild(sdfCommon *child) const
-//{
-//    if (find(properties.begin(), properties.end(), child)
-//            != properties.end())
-//        return true;
-//    else if (find(datatypes.begin(), datatypes.end(), child)
-//            != datatypes.end())
-//        return true;
-//    else if (find(actions.begin(), actions.end(), child)
-//            != actions.end())
-//        return true;
-//    else if (find(events.begin(), events.end(), child)
-//            != events.end())
-//        return true;
-//
-//    return false;
-//}
 
 sdfObject* sdfObject::fileToObject(string path, bool testForThing)
 {
@@ -2880,18 +2860,6 @@ sdfObject* sdfObject::fileToObject(string path, bool testForThing)
     return this->jsonToObject(json_input, testForThing);
 }
 
-//bool sdfThing::hasChild(sdfCommon *child) const
-//{
-//    if (find(childThings.begin(), childThings.end(), child)
-//            != childThings.end())
-//        return true;
-//    else if (find(childObjects.begin(), childObjects.end(), child)
-//            != childObjects.end())
-//        return true;
-//
-//    return false;
-//}
-
 sdfThing* sdfThing::jsonToThing(json input, bool nested)
 {
     // if we are just loading the context, ignore things that do not
@@ -2905,7 +2873,6 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
 
     for (json::iterator it = input.begin(); it != input.end(); ++it)
     {
-        //cout << "jsonToThing: " << it.key() << endl;
         if (it.key() == "info" && !it.value().empty())
         {
             sdfInfoBlock *info = new sdfInfoBlock();
@@ -2914,7 +2881,6 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
         }
         else if (it.key() == "namespace" && !it.value().empty())
         {
-            cout << "OOOOOOOOOOOOOOOOOOOOOOOOOOO"<<endl;
             sdfNamespaceSection *ns = new sdfNamespaceSection();
             this->setNamespace(ns);
             this->ns->jsonToNamespace(input);
@@ -2962,23 +2928,19 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
         unassignedRefs = assignRefs(unassignedRefs, REF);
         unassignedReqs = assignRefs(unassignedReqs, REQ);
 
-        if (!unassignedRefs.empty() || !unassignedReqs.empty())
-            cerr << "There is/are "
-            + to_string(unassignedRefs.size()+unassignedReqs.size())
-            + " reference(s) left unassigned" << endl;
-        else
+        //if (!unassignedRefs.empty() || !unassignedReqs.empty())
+        //    cerr << "There is/are "
+        //    + to_string(unassignedRefs.size()+unassignedReqs.size())
+        //   + " reference(s) left unassigned" << endl;
+        if (unassignedRefs.empty() && unassignedReqs.empty())
             cout << "All references resolved" << endl;
 
         if (isContext)
         {
-//            unassignedRefs = {};
-//            unassignedReqs = {};
-
             if (this->getNamespace())
                 this->getNamespace()->makeDefinitionsGlobal();
         }
     }
-    //this->jsonToCommon(input);
     return this;
 }
 
@@ -4257,18 +4219,15 @@ sdfFile* sdfFile::fromJson(nlohmann::json input)
     unassignedRefs = assignRefs(unassignedRefs, REF);
     unassignedReqs = assignRefs(unassignedReqs, REQ);
 
-    if (!unassignedRefs.empty() || !unassignedReqs.empty())
-        cerr << "There is/are "
-        + to_string(unassignedRefs.size()+unassignedReqs.size())
-        + " reference(s) left unassigned" << endl;
-    else
+    //if (!unassignedRefs.empty() || !unassignedReqs.empty())
+    //    cerr << "There is/are "
+    //    + to_string(unassignedRefs.size()+unassignedReqs.size())
+    //    + " reference(s) left unassigned" << endl;
+    if (unassignedRefs.empty() && unassignedReqs.empty())
         cout << "All references resolved" << endl;
 
     if (isContext)
     {
-//        unassignedRefs = {};
-//        unassignedReqs = {};
-
         if (this->getNamespace())
             this->getNamespace()->makeDefinitionsGlobal();
     }
