@@ -1059,7 +1059,7 @@ public:
      * @param max The new value of the maxInt member variable.
      * @sa maxInt and maxIntSet
      */
-    void setMaxInt(uint64_t max);
+    void setMaxInt(int64_t max);
 
     /**
      * Setter function to delete the minInt member variable.
@@ -1493,7 +1493,22 @@ public:
      * @sa defaultString, defaultInt, defaultNumber, defaultBool
      */
     std::string getDefaultAsString();
+
+    /**
+     * Returns a string vector filled with the default array elements
+     * converted into strings
+     *
+     * return An array filled with the default values as strings
+     */
     std::vector<std::string> getDefaultArrayAsStringVector();
+
+    /**
+     * Returns a string vector filled with the constant array elements
+     * converted into strings
+     *
+     * return An array filled with the constant values as strings
+     */
+    std::vector<std::string> getConstantArrayAsStringVector();
 
     /**
      * Getter function for the member variable defaultDefined
@@ -1697,7 +1712,7 @@ public:
      *
      * @sa maxInt
      */
-    uint64_t getMaxInt() const;
+    int64_t getMaxInt() const;
 
     /**
      * Getter function for the member variable minIntSet
@@ -1814,12 +1829,15 @@ public:
      * string or the subtype (sdfType) value or the format value, depending
      * on which is defined.
      *
+     * @param forCopy Whether or not sdfType should be return, this is not
+     *                useful if this function is called to copy the unit
+     *
      * @return The value of the member variable units, subtype or format,
      *         depending on which one is defined.
      *
      * @sa units, subtype and format
      */
-    std::string getUnits();
+    std::string getUnits(bool forCopy = false);
 
     /**
      * Getter function for the member variable units as a C-string.
@@ -2258,7 +2276,6 @@ private:
      */
     bool maxIntSet;
 
-    // TODO: number > exclusiveMin vs >=
     /**
      * Represents the exclusiveMinimum quality of type number
      * @sa getExclusiveMinimumNumber()
@@ -3374,7 +3391,6 @@ private:
 };
 
 /*
- * TODO?
  * Products may be composed of Objects and Things at the high level,
  * and may include their own definitions of Properties, Actions, and
  * Events that can be used to extend or complete the included Object

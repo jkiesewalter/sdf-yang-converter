@@ -289,15 +289,6 @@ sdfCommon* sdfCommon::getReference()
     return this->reference;
 }
 
-/*
-string sdfCommon::getReferenceAsString()
-{
-    // TODO: for the reference (not the common!) create a string
-    // (e.g. "#/sdfObject/temperatureWithAlarm/sdfData/temperatureData")
-    // or return empty string if there is no reference (try catch block?)
-    return "";
-}
-*/
 vector<sdfCommon*> sdfCommon::getRequired()
 {
     return required;
@@ -652,16 +643,16 @@ sdfData::sdfData(sdfData &data)
     uniqueItems = data.getUniqueItems();
     uniqueItemsDefined = data.getUniqueItemsDefined();
     if (data.getItemConstr())
-    this->setItemConstr(data.getItemConstr()); // TODO: deep or shallow copy?
+    this->setItemConstr(data.getItemConstr()); // deep or shallow copy?
     //this->setItemConstr(new sdfData(*data.getItemConstr()));
-    units = data.getUnits();
+    units = data.getUnits(true);
     scaleMinimum = data.getScaleMinimum();
     scaleMaximum = data.getScaleMaximum();
     contentFormat = data.getContentFormat();
-    this->setChoice(data.getChoice()); // TODO: s.o.
+    this->setChoice(data.getChoice());
     //for (sdfData *d : data.getChoice())
     //    this->addChoice(new sdfData(*d));
-    this->setObjectProperties(data.getObjectProperties()); // TODO: s.o.
+    this->setObjectProperties(data.getObjectProperties());
     //for (sdfData *d : data.getObjectProperties())
     //    this->addObjectProperty(new sdfData(*d));
     requiredObjectProperties = data.getRequiredObjectProperties();
@@ -1143,9 +1134,9 @@ bool sdfData::getUniqueItems()
     return uniqueItems;
 }
 
-string sdfData::getUnits()
+string sdfData::getUnits(bool forCopy)
 {
-    if (units != "")
+    if (units != "" || forCopy)
         return units;
 
     else if (subtype == sdf_unix_time)
@@ -1267,7 +1258,7 @@ json sdfData::dataToJson(json prefix)
     data = this->commonToJson(data);
 
     if (units != "")
-        data["unit"] = this->getUnits();
+        data["unit"] = this->getUnits(true);
     if (this->getSubtype() == sdf_byte_string)
         data["sdfType"] = "byte-string";
     else if (this->getSubtype() == sdf_unix_time)
@@ -1296,8 +1287,15 @@ json sdfData::dataToJson(json prefix)
         this->setType(json_type_undef);
     }
 
-    // TODO: scaleMinimum and scaleMaximum (where do they go?)
-    // TODO: exclusiveMinimum and exclusiveMaximum (bool and float)
+    // TODO: test?
+    if (!isnan(exclusiveMinimum_number))
+        data["exclusiveMinimum"] = this->getExclusiveMinimumNumber();
+    if (!isnan(exclusiveMaximum_number))
+        data["exclusiveMaximum"] = this->getExclusiveMaximumNumber();
+    if (exclusiveMinimum_bool)
+        data["exclusiveMinimum"] = "true";
+    if (exclusiveMaximum_bool)
+        data["exclusiveMaximum"] = "true";
 
     if (constDefined)
     {
@@ -1317,13 +1315,6 @@ json sdfData::dataToJson(json prefix)
             data["const"] = this->getConstantBoolArray();
         else if (!this->getConstantIntArray().empty())
             data["const"] = this->getConstantIntArray();
-        // TODO: Is there even a constant object? No I think?
-        /*else if (this->getConstantObject())
-        {
-            json tmpJson;
-            data["const"]
-                 = this->getConstantObject()->dataToJson(tmpJson)["sdfData"];
-        }*/
     }
     if (defaultDefined)
     {
@@ -1343,13 +1334,6 @@ json sdfData::dataToJson(json prefix)
             data["default"] = this->getDefaultBoolArray();
         else if (!this->getDefaultIntArray().empty())
             data["default"] = this->getDefaultIntArray();
-        // TODO: Is there even a default object? I don't think so?
-        /*else if (this->getDefaultObject())
-        {
-            json tmpJson;
-            data["default"]
-                 = this->getDefaultObject()->dataToJson(tmpJson)["sdfData"];
-        }*/
     }
     if (!isnan(this->getMinimum()))
         data["minimum"] = this->getMinimum();
@@ -1950,7 +1934,7 @@ sdfThing* sdfObject::getParentThing() const
 void sdfObject::setParentThing(sdfThing *parentThing)
 {
     this->parent = parentThing;
-    // TODO: also add this to parentThings object list?
+    // also add this to parentThings object list?
     // make sure the object is in the list only once
     // parentThing->addObject(this);
 }
@@ -2548,7 +2532,7 @@ sdfData* sdfData::jsonToData(json input)
             this->setItemConstr(itemConstr);
             itemConstr->jsonToData(input["items"]);
         }
-        // TODO: keep key "units" for older versions?
+        // keep key "units" for older versions?
         else if ((it.key() == "unit" || it.key() == "units")
                 && !it.value().empty())
         {
@@ -2584,10 +2568,8 @@ sdfData* sdfData::jsonToData(json input)
         }
         else if (it.key() == "contentFormat" && !it.value().empty())
         {
-            // TODO: ??
+            this->contentFormat = it.value();
         }
-        //else if (it.key() == "subtype" && !it.value().empty())
-        // TODO: keep "subtype" for older versions?
         else if ((it.key() == "sdfType" || it.key() == "subtype")
                 && !it.value().empty())
         {
@@ -2599,7 +2581,6 @@ sdfData* sdfData::jsonToData(json input)
                 this->subtype = sdf_subtype_undef;
         }
     }
-    //this->jsonToCommon(input);
     return this;
 }
 
@@ -2610,17 +2591,7 @@ sdfEvent* sdfEvent::jsonToEvent(json input)
     {
         if (it.key() == "sdfOutputData" && !it.value().empty())
         {
-            /*
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
-            {
-                cout << "HELLLO" << jt.key() << endl;
-                sdfData *data = new sdfData();
-                data->setLabel(correctValue(jt.key()));
-                data->jsonToData(input["sdfOutputData"]);
-                this->addOutputData(data);
-            }*/
             sdfData *data = new sdfData();
-            //data->setLabel("");
             this->setOutputData(data);
             data->jsonToData(input["sdfOutputData"]);
 
@@ -2636,7 +2607,6 @@ sdfEvent* sdfEvent::jsonToEvent(json input)
             }
         }
     }
-    //this->jsonToCommon(input);
     return this;
 }
 
@@ -2646,12 +2616,7 @@ sdfAction* sdfAction::jsonToAction(json input)
     for (json::iterator it = input.begin(); it != input.end(); ++it)
     {
         if (it.key() == "sdfInputData" && !it.value().empty())
-        {/*
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
-            {
-                sdfData *refData = new sdfData();
-                this->addInputData(refData);
-            }*/
+        {
             sdfData *data = new sdfData();
             this->setInputData(data);
             data->jsonToData(input["sdfInputData"]);
@@ -2665,12 +2630,7 @@ sdfAction* sdfAction::jsonToAction(json input)
             }
         }
         else if (it.key() == "sdfOutputData" && !it.value().empty())
-        {/*
-            for (json::iterator jt = it.value().begin(); jt != it.value().end(); ++jt)
-            {
-                sdfData *refData = new sdfData();
-                this->addOutputData(refData);
-            }*/
+        {
             sdfData *data = new sdfData();
             this->setOutputData(data);
             data->jsonToData(input["sdfOutputData"]);
@@ -2686,15 +2646,12 @@ sdfAction* sdfAction::jsonToAction(json input)
             }
         }
     }
-    //this->jsonToCommon(input);
     return this;
 }
 
 sdfProperty* sdfProperty::jsonToProperty(json input)
 {
-    //this->jsonToCommon(input);
     this->jsonToData(input);
-    //this->jsonToCommon(input);
     return this;
 }
 
@@ -2715,13 +2672,10 @@ void sdfNamespaceSection::makeDefinitionsGlobal()
                 newRef = this->getDefaultNamespace() + ":" + string(sm[1]);
             if (it->second)
             {
-//                cout << newRef << endl;
-//                cout << it->second->getName() << endl;
                 existingDefinitonsGlobal[newRef] = it->second;
             }
         }
     }
-    //existingDefinitons.clear();
     existingDefinitons = {};
 }
 
@@ -2730,7 +2684,6 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
     this->jsonToCommon(input);
     for (json::iterator it = input.begin(); it != input.end(); ++it)
     {
-        //cout << "jsonToObject: " << it.key() << endl;
         if (it.key() == "info" && !it.value().empty())
         {
             sdfInfoBlock *info = new sdfInfoBlock();
@@ -2773,8 +2726,6 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
                 this->addProperty(childProperty);
                 childProperty->setName(correctValue(jt.key()));
                 childProperty->jsonToProperty(input["sdfProperty"][jt.key()]);
-
-                //childProperty->setLabel("hi_oh");//jt.key());
             }
         }
         else if (it.key() == "sdfAction" && !it.value().empty())
@@ -2795,7 +2746,7 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
             {
                 sdfEvent *childEvent =  new sdfEvent();
                 this->addEvent(childEvent);
-                // TODO: with label set this way, a label will be printed
+                // with label set this way, a label will be printed
                 // even though there was just a "title" in the original
                 childEvent->setName(correctValue(jt.key()));
                 childEvent->jsonToEvent(input["sdfEvent"][jt.key()]);
@@ -2808,13 +2759,6 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
                     << endl;
             return NULL;
         }
-        /*
-        else if (it.key() != "label" && it.key() != "description" &&
-                it.key() != "sdfRef" && it.key() != "sdfRequired")
-        {
-            printf("deeper\n");
-            this->jsonToObject(input[it.key()]);
-        }*/
     }
 
     // only try to assign refs when this is a top level object
@@ -2824,10 +2768,6 @@ sdfObject* sdfObject::jsonToObject(json input, bool testForThing)
         unassignedRefs = assignRefs(unassignedRefs, REF);
         unassignedReqs = assignRefs(unassignedReqs, REQ);
 
-        //if (!unassignedRefs.empty() || !unassignedReqs.empty())
-        //    cerr << "There is/are "
-        //    + to_string(unassignedRefs.size()+unassignedReqs.size())
-        //    + " reference(s) left unassigned" << endl;
         if (unassignedRefs.empty() && unassignedReqs.empty())
             cout << "All references resolved" << endl;
 
@@ -2898,7 +2838,6 @@ sdfThing* sdfThing::jsonToThing(json input, bool nested)
                 {
                     this->setName(correctValue(jt.key()));
                     this->jsonToThing(input["sdfThing"][jt.key()], true);
-                    //this->jsonToNestedThing(input["sdfThing"][jt.key()]);
                 }
                 else
                 {
@@ -3441,8 +3380,7 @@ std::vector<sdfData*> sdfData::getObjectPropertiesOfRefs() const
 
 void sdfData::setItemConstr(sdfData *constr)
 {
-    //constr->setLabel(this->getLabel() + "-items");
-    // TODO: properties should also have this as their parent and not
+    // properties should also have "this" as their parent and not
     // the constraint
     if (constr)
     {
@@ -3865,6 +3803,30 @@ string sdfData::getConstantAsString()
     return constStr;
 }
 
+
+vector<string> sdfData::getConstantArrayAsStringVector()
+{
+    // fill a vector with whatever default vector is defined
+    // (only one of them can be != {})
+    vector<string> strVec = constantStringArray;
+
+    for (float i : constantNumberArray)
+        strVec.push_back(to_string(i));
+
+    for (bool i : constantBoolArray)
+    {
+        if (i == true)
+            strVec.push_back("true");
+        else
+            strVec.push_back("false");
+    }
+
+    for (int i : constantIntArray)
+        strVec.push_back(to_string(i));
+
+    return strVec;
+}
+
 void sdfCommon::setParentFile(sdfFile *file)
 {
     parentFile = file;
@@ -4197,7 +4159,7 @@ sdfFile* sdfFile::fromJson(nlohmann::json input)
             {
                 sdfEvent *childEvent =  new sdfEvent();
                 this->addEvent(childEvent);
-                // TODO: with label set this way, a label will be printed
+                // with label set this way, a label will be printed
                 // even though there was just a "title" in the original
                 childEvent->setName(correctValue(jt.key()));
                 childEvent->jsonToEvent(input["sdfEvent"][jt.key()]);
@@ -4392,7 +4354,7 @@ void sdfData::setMinInt(int64_t min)
     minIntSet = true;
 }
 
-void sdfData::setMaxInt(uint64_t max)
+void sdfData::setMaxInt(int64_t  max)
 {
     maxInt = max;
     maxIntSet = true;
@@ -4403,7 +4365,7 @@ int64_t sdfData::getMinInt() const
     return minInt;
 }
 
-uint64_t sdfData::getMaxInt() const
+int64_t sdfData::getMaxInt() const
 {
     return maxInt;
 }

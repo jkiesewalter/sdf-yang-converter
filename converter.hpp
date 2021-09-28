@@ -883,6 +883,14 @@ lys_ext_instance** argToSdfSpecExtension(string arg, lys_ext_instance **exts,
         uint8_t exts_size);
 
 /**
+ * Add the sdf-spec extension to a lys_type
+ * 
+ * @param tpdf A pointer to the lys_type in question
+ * @param arg  The string to add as an argument of the sdf-spec extension
+ */
+void setSdfSpecExtension(lys_type *type, string arg);
+
+/**
  * Add the sdf-spec extension to a lys_tpdf
  * 
  * @param tpdf A pointer to the lys_tpdf in question
@@ -1132,7 +1140,6 @@ void convertProperties(vector<sdfProperty*> props, lys_module &module,
         vector<tuple<sdfCommon*, lys_node*>> &openRefs,
         vector<tuple<sdfCommon*, lys_type*>> &openRefsType);
 
-// TODO: now all actions are added to the module (which is changed later)
 /**
  * Convert a number of sdfActions and add them to a YANG module
  * 
