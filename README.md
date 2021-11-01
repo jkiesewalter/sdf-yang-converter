@@ -4,7 +4,7 @@ This converter is work in progress. It implements the mapping described in [draf
 
 Prerequisites:
 * A copy of the [YANG GitHub repository](https://github.com/YangModels/yang) is needed to load the context of a YANG file
-* [libyang](https://github.com/CESNET/libyang) needs to be installed to parse YANG files
+* [libyang version 1](https://github.com/CESNET/libyang/tree/v1.0.225) needs to be installed to parse YANG files
 * [nlohmann/json](https://github.com/nlohmann/json) needs to be installed to parse JSON files
 * [nlohmann/json-shema-validator](https://github.com/pboettch/json-schema-validator) needs to be installed to validate resulting SDF JSON files with a JSON schema (in this case the validation schema from the [SDF Internet Draft](https://www.ietf.org/archive/id/draft-ietf-asdf-sdf-05.html) is used)
 
