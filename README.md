@@ -8,9 +8,27 @@ Prerequisites:
 * [nlohmann/json](https://github.com/nlohmann/json) needs to be installed to parse JSON files
 * [nlohmann/json-shema-validator](https://github.com/pboettch/json-schema-validator) needs to be installed to validate resulting SDF JSON files with a JSON schema (in this case the validation schema from the [SDF Internet Draft](https://www.ietf.org/archive/id/draft-ietf-asdf-sdf-05.html) is used)
 
-Compile the code with `make`. Run the converter with `./converter -f path/to/input/file [- o path/to/output/file] [-c path/to/yang/repo]`, e.g. `./converter -f ./yang/standard/ietf/RFC/ietf-l2vpn-svc.yang -c ./yang` for conversion from YANG to SDF. If no output file name is provided, the output file will be named after the input model.
+Compile the code with `$ make`. Alternatively, you can also use CMake:
 
-A doxygen documentation can be generated directly from the source code by executing `doxygen Doxyfile` (requires doxygen). Afterwards, open `documentation/html/index.html` in your preferred browser for the HTML version of the documentation.
+```
+$ mkdir build
+$ cd build
+$ cmake ..
+$ make
+```
+
+Run the converter with 
+```
+$ ./converter -f path/to/input/file [- o path/to/output/file] [-c path/to/yang/repo]
+```
+
+For example, execute the command
+```
+$ ./converter -f ./yang/standard/ietf/RFC/ietf-l2vpn-svc.yang -c ./yang
+```
+for conversion from YANG to SDF. If no output file name is provided, the output file will be named after the input model.
+
+A doxygen documentation can be generated directly from the source code by executing `$ doxygen Doxyfile` (requires doxygen). Afterwards, open `documentation/html/index.html` in your preferred browser for the HTML version of the documentation.
 
 ## Conversion table YANG->SDF
 
