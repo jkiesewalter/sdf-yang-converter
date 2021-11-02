@@ -5,10 +5,14 @@ playground/
 yang/
 cddl_validator/
 json-schema-validator/
+testdir/
+web_converter/
 *.o
 *.sdf.json
 *.yang
+converter
 .cproject
 .project
 .settings/
 sdf-syntax.cddl
+build/

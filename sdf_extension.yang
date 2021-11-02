@@ -1,0 +1,24 @@
+module sdf_extension {
+  yang-version 1.1;
+  namespace "urn:ietf:params:xml:ns:yang:sdf_extension";
+  prefix helper;
+
+  organization
+    "";
+  contact
+    "";
+  description
+    "";
+  reference
+    "";
+
+  revision 2021-05-04;
+
+  extension sdf-spec {
+    description
+      "Takes as an argument the name of the SDF spec that this YANG element
+      was converted from.
+      Is needed for conversion back to SDF.";
+    argument "sdf-spec-name";
+  }
+}
