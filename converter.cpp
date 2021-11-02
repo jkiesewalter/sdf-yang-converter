@@ -1946,7 +1946,7 @@ sdfData* identToSdfData(struct lys_ident _ident)
         {
             ident->setType("object");
             ref = new sdfData();
-            ref->setName("base_" + j);
+            ref->setName("base_" + to_string(j));
 
             if (identities[_ident.base[j]->name])
                 ref->setReference(identities[_ident.base[j]->name]);
@@ -2105,8 +2105,10 @@ sdfObject* containerToSdfObject(lys_node_container *cont, sdfObject *object)
         // change entry in referencesLeft to match new sdfProperty
         for (int j = 0; j < referencesLeft.size(); j++)
         {
-            if (bufProps.at(i) == get<sdfCommon*>(referencesLeft.at(j)))
-                get<sdfCommon*>(referencesLeft.at(j)) = p;
+            if (bufProps.at(i) == get<2>(referencesLeft.at(j)))
+                get<2>(referencesLeft.at(j)) = p;
+            //if (bufProps.at(i) == get<sdfCommon*>(referencesLeft.at(j)))
+            //    get<sdfCommon*>(referencesLeft.at(j)) = p;
         }
     }
 
@@ -2320,8 +2322,10 @@ sdfFile* moduleToSdfFile(lys_module *module)
             // change entry in referencesLeft to match new sdfProperty
             for (int j = 0; j < referencesLeft.size(); j++)
             {
-                if (bufProps.at(i) == get<sdfCommon*>(referencesLeft.at(j)))
-                    get<sdfCommon*>(referencesLeft.at(j)) = p;
+                //if (bufProps.at(i) == get<sdfCommon*>(referencesLeft.at(j)))
+                //    get<sdfCommon*>(referencesLeft.at(j)) = p;
+                if (bufProps.at(i) == get<2>(referencesLeft.at(j)))
+                    get<2>(referencesLeft.at(j)) = p;
             }
         }
     }
@@ -2640,7 +2644,7 @@ void fillLysType(sdfData *data, struct lys_type &type,
             || data->getSubtype() == sdf_byte_string)
     {
         if (data->getSubtype() == sdf_byte_string)
-            type.base == LY_TYPE_BINARY;
+            type.base = LY_TYPE_BINARY;
         //else if (data->getSubtype() == sdf_unix_time)
         //    setSdfSpecExtension(type.parent, "sdfType unix-time");
 
@@ -2788,6 +2792,8 @@ void fillLysType(sdfData *data, struct lys_type &type,
                 break;
             case LY_TYPE_DEC64:
                 der = &dec64Tpdf;
+                break;
+            default:
                 break;
         }
 
@@ -3946,8 +3952,10 @@ lys_node* sdfDataToNode(sdfData *data, lys_node *node, lys_module &module,
         string augmentRef = data->getParent()->generateReferenceString(true);
         for (int i = 0; i < openAugments.size(); i++)
         {
+            //if (get<2>(openAugments[i]) == augmentRef)
+            //    aug = get<lys_node_augment*>(openAugments[i]);
             if (get<2>(openAugments[i]) == augmentRef)
-                aug = get<lys_node_augment*>(openAugments[i]);
+                aug = get<1>(openAugments[i]);
         }
         if (!aug)
         {
@@ -4184,7 +4192,8 @@ void convertDatatypes(vector<sdfData*> datatypes, lys_module &module,
                 auto it = openRefs.begin();
                 for (int i = 0; i < openRefs.size(); i++)
                 {
-                    if (get<sdfCommon*>(openRefs[i]) == data)
+                    //if (get<sdfCommon*>(openRefs[i]) == data)
+                    if (get<0>(openRefs[i]) == data)
                         openRefs.erase(it);
                     it++;
                 }
@@ -4275,10 +4284,12 @@ void convertNamespaceSection(sdfNamespaceSection *ns, lys_module &module,
                 // if refTopFile has not already been converted convert it now
                 for (int i = 0; i < fileToModule.size(); i++)
                 {
-                    if (get<sdfFile*>(fileToModule[i])->getInfo()->getTitle()
+                    //if (get<sdfFile*>(fileToModule[i])->getInfo()->getTitle()
+                    if (get<0>(fileToModule[i])->getInfo()->getTitle()
                             == it->second->getInfo()->getTitle())
                     {
-                        impMod = get<lys_module*>(fileToModule[i]);
+                        //impMod = get<lys_module*>(fileToModule[i]);
+                        impMod = get<1>(fileToModule[i]);
                         break;
                     }
                 }
@@ -4343,7 +4354,8 @@ void assignOpenRefs(lys_module &module,
                 j = fileToModule.size();
             }
             else
-                mod = get<lys_module*>(fileToModule.at(j));
+                //mod = get<lys_module*>(fileToModule.at(j));
+                mod = get<1>(fileToModule.at(j));
 
             if (avoidNull(mod->name) == str && mod->augment != NULL)
             {

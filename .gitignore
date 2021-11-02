@@ -15,3 +15,4 @@ converter
 .project
 .settings/
 sdf-syntax.cddl
+build/

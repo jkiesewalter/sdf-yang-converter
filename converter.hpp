@@ -23,14 +23,16 @@
 #include <nlohmann/json.hpp>
 #include <nlohmann/json-schema.hpp>
 #include <dirent.h>
+#include <limits>
 #include "sdf.hpp"
 
-// TODO: are these the correct numbers?
-#define MAX_NUM 3.4e+38                /**< Maximal value for float numbers
+//#define MAX_NUM 3.4e+38                
+#define MAX_NUM numeric_limits<float>::max() /**< Maximal value for float numbers
                                         *   (needed for YANG's special min and
                                         *   max values)
                                         */
-#define MAX_INT 9223372036854775807    /**< Maximal value for int64 numbers
+//#define MAX_INT 9223372036854775807    
+#define MAX_INT numeric_limits<int>::max() /**< Maximal value for int64 numbers
                                         *   (needed for YANG's special min and
                                         *   max values)
                                         */
